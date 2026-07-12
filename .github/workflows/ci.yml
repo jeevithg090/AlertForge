@@ -1,0 +1,41 @@
+name: SentinelForge CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: alertforge/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: ruff check app tests mcp_server
+      - run: mypy app --ignore-missing-imports || true
+      - run: pytest tests/ -v
+      # Triage-quality regression gate: fails the build if the classifier drops
+      # below the labeled-corpus floor (verdict accuracy, FP suppression, …).
+      - run: python -m app.eval.harness
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: alertforge/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: alertforge/frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npx tsc --noEmit
+      - run: npm run build

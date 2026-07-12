@@ -1,0 +1,99 @@
+{
+  "title": "SentinelForge — SOC Pipeline",
+  "uid": "sentinelforge",
+  "schemaVersion": 39,
+  "version": 1,
+  "timezone": "utc",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Alert Ingest Rate",
+      "type": "stat",
+      "gridPos": {"h": 8, "w": 6, "x": 0, "y": 0},
+      "targets": [
+        {
+          "expr": "rate(sf_alerts_ingested_total[5m])",
+          "legendFormat": "{{source}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "cps", "color": {"mode": "palette-classic"}}
+      }
+    },
+    {
+      "id": 2,
+      "title": "Noise Reduction %",
+      "type": "stat",
+      "gridPos": {"h": 8, "w": 6, "x": 6, "y": 0},
+      "targets": [
+        {
+          "expr": "rate(sf_alerts_correlated_total[5m]) / rate(sf_alerts_ingested_total[5m]) * 100",
+          "legendFormat": "folded %"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "percent", "color": {"mode": "palette-classic"}}
+      }
+    },
+    {
+      "id": 3,
+      "title": "Stage Latency p95",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(sf_stage_seconds_bucket[5m])) by (le, stage))",
+          "legendFormat": "{{stage}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "s"}
+      }
+    },
+    {
+      "id": 4,
+      "title": "Actions by Status",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 6, "x": 0, "y": 8},
+      "targets": [
+        {
+          "expr": "rate(sf_actions_total[5m])",
+          "legendFormat": "{{action_type}} {{status}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "palette-classic"}}
+      }
+    },
+    {
+      "id": 5,
+      "title": "Approval Queue Size",
+      "type": "stat",
+      "gridPos": {"h": 8, "w": 6, "x": 6, "y": 8},
+      "targets": [
+        {
+          "expr": "sf_approval_queue_size",
+          "legendFormat": "pending"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "none", "color": {"mode": "palette-classic"}}
+      }
+    },
+    {
+      "id": 6,
+      "title": "LLM Tokens by Model",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "targets": [
+        {
+          "expr": "rate(sf_llm_tokens_total[5m])",
+          "legendFormat": "{{model}} {{kind}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "cps"}
+      }
+    }
+  ]
+}

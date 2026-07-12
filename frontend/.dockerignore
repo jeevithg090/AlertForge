@@ -1,0 +1,11 @@
+# keep the docker build context lean — never copy the host's
+# node_modules or .next cache into the image
+node_modules
+.next
+.cache
+.git
+.gitignore
+Dockerfile
+.dockerignore
+README.md
+.eslintignore

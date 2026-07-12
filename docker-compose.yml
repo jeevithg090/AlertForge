@@ -1,0 +1,183 @@
+name: sentinelforge
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: sentinelforge
+      POSTGRES_PASSWORD: sentinelforge
+      POSTGRES_DB: sentinelforge
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sentinelforge -d sentinelforge"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  mock-elasticsearch:
+    # In-memory ES-shaped endpoint so SIEM auth-log / log-search tools have a
+    # plausible upstream in the demo. Real clusters: set ELASTICSEARCH_URL +
+    # ELASTICSEARCH_API_KEY and USE_MOCK_TOOLS=false in .env.
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["python", "-m", "app.utils.mock_elasticsearch"]
+    environment: &backend_env
+      DATABASE_URL: postgresql://sentinelforge:sentinelforge@postgres:5432/sentinelforge
+      REDIS_URL: redis://redis:6379/0
+      QWEN_BASE_URL: ${QWEN_BASE_URL:-https://api.groq.com/openai/v1}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY}
+      QWEN_MODEL_MAX: ${QWEN_MODEL_MAX:-llama-3.3-70b-versatile}
+      QWEN_MODEL_PLUS: ${QWEN_MODEL_PLUS:-llama-3.3-70b-versatile}
+      QWEN_MODEL_FLASH: ${QWEN_MODEL_FLASH:-llama-3.1-8b-instant}
+      QWEN_EMBEDDING_MODEL: ${QWEN_EMBEDDING_MODEL:-text-embedding-v4}
+      USE_MOCK_TOOLS: ${USE_MOCK_TOOLS:-true}
+      ELASTICSEARCH_URL: http://mock-elasticsearch:9200
+      VIRUSTOTAL_API_KEY: ${VIRUSTOTAL_API_KEY:-}
+      ABUSEIPDB_API_KEY: ${ABUSEIPDB_API_KEY:-}
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
+      SLACK_CHANNEL_ID: ${SLACK_CHANNEL_ID:-}
+      RUNBOOK_MCP_SSE_URL: http://mcp-server:8001/sse
+      JIRA_MCP_SSE_URL: http://mcp-server:8001/sse
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-change-me}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      FRONTEND_URL: http://localhost:3000
+      BACKEND_URL: http://localhost:8000
+      AUTO_APPROVE_TIMEOUT_P4: ${AUTO_APPROVE_TIMEOUT_P4:-5}
+      AUTO_APPROVE_TIMEOUT_P3: ${AUTO_APPROVE_TIMEOUT_P3:-15}
+      AUTO_APPROVE_TIMEOUT_P2: ${AUTO_APPROVE_TIMEOUT_P2:-2}
+    ports:
+      - "9200:9200"
+    restart: unless-stopped
+
+  mcp-server:
+    build:
+      context: ./mcp_server
+      dockerfile: Dockerfile
+    environment:
+      RUNBOOKS_DIR: /runbooks
+    volumes:
+      - ./runbooks:/runbooks
+    ports:
+      - "8001:8001"
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["sh", "-c", "alembic upgrade head && python -m app.services.runbook_indexer || true && python -m app.main"]
+    environment:
+      <<: *backend_env
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      mock-elasticsearch: { condition: service_started }
+      mcp-server: { condition: service_started }
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./runbooks:/runbooks
+      - chromadata:/app/.chroma
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/v1/health',timeout=3).status==200 else 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["python", "-m", "app.pipeline.orchestrator"]
+    environment:
+      <<: *backend_env
+    depends_on:
+      backend: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    volumes:
+      - ./backend:/app
+      - ./runbooks:/runbooks
+      - chromadata:/app/.chroma
+    restart: unless-stopped
+
+  prometheus:
+    profiles: ["observability"]
+    image: prom/prometheus:latest
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml
+      - promdata:/prometheus
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
+  grafana:
+    profiles: ["observability"]
+    image: grafana/grafana:latest
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: sentinelforge
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/provisioning/dashboards/sentinelforge.json
+    volumes:
+      - ./observability/grafana/datasources:/etc/grafana/provisioning/datasources
+      - ./observability/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - grafdata:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      BACKEND_URL: http://backend:8000
+    depends_on:
+      backend: { condition: service_healthy }
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
+  chromadata:
+  promdata:
+  grafdata:
