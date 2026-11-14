@@ -14,6 +14,10 @@ from app.services.redis_client import (
 
 router = APIRouter()
 
+# Events are sent as unnamed SSE messages so a browser EventSource receives all
+# of them via ``onmessage``; the event kind is the ``type`` field of the JSON
+# payload. (Named events would each need their own addEventListener.)
+
 
 def _parse_last_event_id(request: Request) -> int:
     """SSE Last-Event-ID is sent by browsers automatically on reconnect."""
@@ -41,8 +45,7 @@ async def incident_stream(incident_id: str, request: Request):
                 return
             # The index after replay is the count of events the client has now seen.
             yield {
-                "event": event.get("type", "message"),
-                "id": i,
+                "id": str(i),
                 "data": json.dumps(event, default=str),
             }
         # Now stream live events.
@@ -51,8 +54,7 @@ async def incident_stream(incident_id: str, request: Request):
             if await request.is_disconnected():
                 break
             yield {
-                "event": event.get("type", "message"),
-                "id": next_index,
+                "id": str(next_index),
                 "data": json.dumps(event, default=str),
             }
             next_index += 1
@@ -68,7 +70,7 @@ async def all_incidents_stream(request: Request):
         async for event in subscribe_all():
             if await request.is_disconnected():
                 break
-            yield {"event": event.get("type", "message"), "data": json.dumps(event, default=str)}
+            yield {"data": json.dumps(event, default=str)}
 
     return EventSourceResponse(event_generator())
 
