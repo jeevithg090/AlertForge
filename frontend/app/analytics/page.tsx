@@ -2,7 +2,16 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { fetchMTTR, fetchByService, fetchAnalytics } from '@/lib/api';
+import {
+  ApiError,
+  type ApiRecord,
+  fetchAnalytics,
+  fetchByService,
+  fetchByVerdict,
+  fetchMTTR,
+  fetchSummary,
+  fetchTopTechniques,
+} from '@/lib/api';
 
 interface VerdictRow { verdict: string; count: number }
 interface ServiceRow { affected_service: string; count: number }
@@ -17,40 +26,56 @@ const VERDICT_COLORS: Record<string, string> = {
 };
 
 export default function AnalyticsPage() {
-  const [summary, setSummary] = useState<any>(null);
-  const [mttr, setMTTR] = useState<any>(null);
+  const [summary, setSummary] = useState<ApiRecord | null>(null);
+  const [mttr, setMTTR] = useState<ApiRecord | null>(null);
   const [byService, setByService] = useState<ServiceRow[]>([]);
   const [verdicts, setVerdicts] = useState<VerdictRow[]>([]);
-  const [techniques, setTechniques] = useState<any[]>([]);
+  const [techniques, setTechniques] = useState<ApiRecord[]>([]);
   const [usage, setUsage] = useState<UsageRow[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const [error, setError] = useState('');
+
   useEffect(() => {
-    const API = process.env.NEXT_PUBLIC_API_URL || '';
+    // Each panel degrades independently; only a total failure is surfaced.
+    const failures: unknown[] = [];
+    const soft = <T,>(p: Promise<T>, fallback: T) =>
+      p.catch(err => {
+        failures.push(err);
+        return fallback;
+      });
     Promise.all([
-      fetch(`${API}/api/v1/analytics/summary`).then(r => r.json()).catch(() => ({})),
-      fetchMTTR().catch(() => ({})),
-      fetchByService().then((d: any) => d.services || []).catch(() => []),
-      fetch(`${API}/api/v1/analytics/by-verdict`).then(r => r.json()).then(d => d.verdicts || []).catch(() => []),
-      fetch(`${API}/api/v1/analytics/top-techniques`).then(r => r.json()).then(d => d.techniques || []).catch(() => []),
-      fetchAnalytics().then((d: any) => d.usage || []).catch(() => []),
+      soft(fetchSummary(), {}),
+      soft(fetchMTTR(), null),
+      soft(fetchByService().then(d => d.services || []), []),
+      soft(fetchByVerdict().then(d => d.verdicts || []), []),
+      soft(fetchTopTechniques().then(d => d.techniques || []), []),
+      soft(fetchAnalytics().then(d => d.usage || []), []),
     ]).then(([s, m, ser, v, t, u]) => {
       setSummary(s); setMTTR(m); setByService(ser); setVerdicts(v); setTechniques(t); setUsage(u);
+      if (failures.length === 6) {
+        const first = failures[0];
+        setError(first instanceof ApiError ? first.message : 'Could not load analytics');
+      }
       setLoading(false);
     });
   }, []);
 
   return (
     <div className="min-h-screen bg-warroom-bg text-gray-200">
-      <header className="border-b border-warroom-border px-6 py-4 flex items-center gap-3">
+      <header className="border-b border-warroom-border px-4 sm:px-6 py-4 flex flex-wrap items-center gap-3">
         <Link href="/dashboard" className="text-gray-400 hover:text-white">← Dashboard</Link>
         <span className="text-gray-500">|</span>
         <h1 className="text-xl font-bold">SOC Analytics</h1>
       </header>
 
-      <main className="p-6 max-w-6xl mx-auto space-y-6">
+      <main className="p-4 sm:p-6 max-w-6xl mx-auto space-y-6">
         {loading ? (
-          <div className="text-gray-500">Loading analytics...</div>
+          <div className="text-gray-500" role="status">Loading analytics…</div>
+        ) : error ? (
+          <div role="alert" className="bg-red-500/10 border border-red-500/40 text-red-300 rounded-lg p-4 text-sm">
+            {error}. Is the backend running?
+          </div>
         ) : (
           <>
             {/* Alert-fatigue reduction — the headline SOC efficiency metric. */}
@@ -64,7 +89,7 @@ export default function AnalyticsPage() {
                     {(summary?.total ?? 0).toLocaleString()} incidents by the correlation engine
                   </div>
                 </div>
-                <div className="flex gap-6 text-center">
+                <div className="flex flex-wrap gap-6 text-center">
                   <div>
                     <div className="text-2xl font-bold text-gray-200">{(summary?.total_alerts_ingested ?? 0).toLocaleString()}</div>
                     <div className="text-xs text-gray-500">alerts ingested</div>

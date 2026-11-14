@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { useAllIncidentsStream, SSEEvent } from '@/lib/sse';
-import { fetchIncidents, fetchPendingApprovals, ingestText } from '@/lib/api';
+import { ApiError, fetchIncidents, fetchPendingApprovals, ingestText } from '@/lib/api';
 
 interface Incident {
   id: string;
@@ -64,50 +64,53 @@ function formatTime(iso: string) {
   return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-function nowISO() {
-  return new Date().toISOString();
-}
-
 export default function DashboardPage() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [approvalCount, setApprovalCount] = useState(0);
   const [eventLog, setEventLog] = useState<LogEntry[]>([]);
-  const { events, connected } = useAllIncidentsStream();
   const eventLogRef = useRef<HTMLDivElement>(null);
 
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+
   useEffect(() => {
-    fetchIncidents().then(data => {
-      if (data.incidents) {
-        setIncidents(data.incidents);
-        setApprovalCount(data.incidents.filter((i: Incident) => i.status === 'AWAITING_APPROVAL').length);
-      }
-    });
+    fetchIncidents()
+      .then(data => {
+        if (data.incidents) {
+          setIncidents(data.incidents);
+          setApprovalCount(data.incidents.filter((i: Incident) => i.status === 'AWAITING_APPROVAL').length);
+        }
+      })
+      .catch(err => setLoadError(err instanceof ApiError ? err.message : 'Could not load incidents'))
+      .finally(() => setLoading(false));
     fetchPendingApprovals().then(data => {
       // API returns { pending: [...], count: N } — not an array.
       if (data && typeof data.count === 'number') setApprovalCount(data.count);
     }).catch(() => {});
   }, []);
 
-  useEffect(() => {
-    if (events.length > 0) {
-      const last = events[events.length - 1];
-      if (last.type === 'incident.created' && last.incident_id) {
-        const newId: string = last.incident_id;
-        setIncidents(prev => [
-          {
-            id: newId,
-            severity: last.severity || 'P3_MEDIUM',
-            status: 'INGESTED',
-            affected_service: last.affected_service || 'unknown',
-            alert_message: last.alert_message || '',
-            created_at: new Date().toISOString(),
-          },
-          ...prev,
-        ]);
-      }
-      setEventLog(prev => [...prev.slice(-199), { ts: new Date().toISOString(), event: last }]);
+  // Handle every live event (not just the latest render's) so bursts aren't dropped.
+  const { connected } = useAllIncidentsStream((last: SSEEvent) => {
+    if (last.type === 'incident.created' && last.incident_id) {
+      const newId: string = last.incident_id;
+      setIncidents(prev =>
+        prev.some(i => i.id === newId)
+          ? prev
+          : [
+              {
+                id: newId,
+                severity: last.severity || 'P3_MEDIUM',
+                status: 'INGESTED',
+                affected_service: last.affected_service || 'unknown',
+                alert_message: last.alert_message || '',
+                created_at: new Date().toISOString(),
+              },
+              ...prev,
+            ],
+      );
     }
-  }, [events]);
+    setEventLog(prev => [...prev.slice(-199), { ts: new Date().toISOString(), event: last }]);
+  });
 
   useEffect(() => {
     if (eventLogRef.current) {
@@ -121,12 +124,12 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-warroom-bg text-gray-200">
-      <header className="border-b border-warroom-border px-6 py-4 flex items-center justify-between">
+      <header className="border-b border-warroom-border px-4 sm:px-6 py-4 flex flex-wrap gap-3 items-center justify-between">
         <div className="flex items-center gap-3">
-          <span className="text-2xl">🛡️</span>
-          <h1 className="text-xl font-bold tracking-wide">SENTINELFORGE SOC WAR ROOM</h1>
+          <span className="text-2xl" aria-hidden="true">🛡️</span>
+          <h1 className="text-lg sm:text-xl font-bold tracking-wide">SENTINELFORGE SOC WAR ROOM</h1>
         </div>
-        <div className="flex items-center gap-4 text-sm">
+        <nav aria-label="Primary" className="flex flex-wrap items-center gap-4 text-sm">
           <Link href="/analytics" className="text-gray-400 hover:text-white">Analytics</Link>
           <Link href="/security" className="text-gray-400 hover:text-white">Security</Link>
           <span className="text-gray-400">
@@ -135,21 +138,34 @@ export default function DashboardPage() {
           <span className="text-gray-400">
             Resolved: <span className="text-warroom-success font-bold">{resolved.length}</span>
           </span>
-          {awaiting.length > 0 && (
+          {Math.max(approvalCount, awaiting.length) > 0 && (
             <span className="text-gray-400">
-              Approvals: <span className="text-warroom-warning font-bold animate-pulse">{awaiting.length}</span>
+              Approvals: <span className="text-warroom-warning font-bold animate-pulse">{Math.max(approvalCount, awaiting.length)}</span>
             </span>
           )}
-          <span className={`w-2 h-2 rounded-full ${connected ? 'bg-warroom-success animate-pulse-dot' : 'bg-red-500'}`} />
-        </div>
+          <span
+            role="status"
+            aria-label={connected ? 'Live stream connected' : 'Live stream disconnected'}
+            title={connected ? 'Live stream connected' : 'Live stream disconnected'}
+            className={`w-2 h-2 rounded-full ${connected ? 'bg-warroom-success animate-pulse-dot' : 'bg-red-500'}`}
+          />
+        </nav>
       </header>
 
-      <main className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <main className="p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Incident Feed */}
         <div className="lg:col-span-2">
           <h2 className="text-lg font-semibold mb-4 text-gray-300">Incident Feed</h2>
           <div className="space-y-3 max-h-[calc(100vh-220px)] overflow-y-auto pr-2">
-            {incidents.length === 0 && (
+            {loading && (
+              <div className="text-gray-500 text-center py-12" role="status">Loading incidents…</div>
+            )}
+            {loadError && (
+              <div role="alert" className="bg-red-500/10 border border-red-500/40 text-red-300 rounded-lg p-4 text-sm">
+                {loadError}. Is the backend running on {process.env.NEXT_PUBLIC_API_URL || 'this origin'}?
+              </div>
+            )}
+            {!loading && !loadError && incidents.length === 0 && (
               <div className="text-gray-500 text-center py-12 border border-warroom-border rounded-lg">
                 No incidents yet. Fire a demo alert to get started.
               </div>
@@ -279,29 +295,34 @@ function QuickIngest() {
     setStatus('Sending...');
     try {
       const data = await ingestText(text);
-      setStatus(data.accepted ? `✓ Incident ${data.incident_id?.slice(0, 8)}` : `✗ ${data.reason}`);
+      if (!data.accepted) setStatus(`✗ ${data.reason}`);
+      else if (data.correlated_into) setStatus(`✓ Folded into ${data.correlated_into.slice(0, 8)}`);
+      else setStatus(`✓ Incident ${data.incident_id?.slice(0, 8)}`);
       setText('');
-    } catch {
-      setStatus('Error');
+    } catch (err) {
+      setStatus(`✗ ${err instanceof ApiError ? err.message : 'Request failed'}`);
     }
   };
 
   return (
     <div>
-      <label className="text-xs text-gray-400 block mb-1">Paste Alert Text</label>
+      <label htmlFor="quick-ingest" className="text-xs text-gray-400 block mb-1">Paste Alert Text</label>
       <textarea
+        id="quick-ingest"
         value={text}
         onChange={e => setText(e.target.value)}
         placeholder="SIEM/EDR alert JSON or plain text: 'failed password from 193.32.162.144 ...'"
         className="w-full bg-warroom-bg border border-warroom-border rounded p-2 text-sm resize-none h-20 focus:outline-none focus:border-warroom-tool font-mono"
       />
       <button
+        type="button"
         onClick={submit}
-        className="w-full mt-2 py-2 px-4 bg-warroom-tool/20 border border-warroom-tool/40 rounded text-sm hover:bg-warroom-tool/30 transition"
+        disabled={!text.trim() || status === 'Sending...'}
+        className="w-full mt-2 py-2 px-4 bg-warroom-tool/20 border border-warroom-tool/40 rounded text-sm hover:bg-warroom-tool/30 transition disabled:opacity-50"
       >
         Submit Finding
       </button>
-      {status && <div className="text-xs text-gray-400 mt-1">{status}</div>}
+      {status && <div className="text-xs text-gray-400 mt-1" role="status">{status}</div>}
     </div>
   );
 }

@@ -2,15 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-
-const API = process.env.NEXT_PUBLIC_API_URL || '';
+import { ApiError, type ApiRecord, fetchSecurityControls, fetchSecurityEvents } from '@/lib/api';
 
 interface SecurityEvent {
   id: string;
   timestamp: string;
   actor: string;
   action: string;
-  details: any;
+  details: ApiRecord | null;
 }
 interface Control {
   category: string;
@@ -23,9 +22,16 @@ export default function SecurityPage() {
   const [events, setEvents] = useState<SecurityEvent[]>([]);
   const [controls, setControls] = useState<Control[]>([]);
 
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
   useEffect(() => {
-    fetch(`${API}/api/v1/security/events?limit=50`).then(r => r.json()).then(d => setEvents(d.events || [])).catch(() => {});
-    fetch(`${API}/api/v1/security/controls`).then(r => r.json()).then(d => setControls(d.controls || [])).catch(() => {});
+    const onError = (err: unknown) =>
+      setError(err instanceof ApiError ? err.message : 'Could not load security data');
+    Promise.all([
+      fetchSecurityEvents(50).then(d => setEvents((d.events || []) as SecurityEvent[])).catch(onError),
+      fetchSecurityControls().then(d => setControls((d.controls || []) as Control[])).catch(onError),
+    ]).finally(() => setLoading(false));
   }, []);
 
   // Group controls by category for display
@@ -34,14 +40,20 @@ export default function SecurityPage() {
 
   return (
     <div className="min-h-screen bg-warroom-bg text-gray-200">
-      <header className="border-b border-warroom-border px-6 py-4 flex items-center gap-3">
+      <header className="border-b border-warroom-border px-4 sm:px-6 py-4 flex flex-wrap items-center gap-3">
         <Link href="/dashboard" className="text-gray-400 hover:text-white">← Dashboard</Link>
         <span className="text-gray-500">|</span>
-        <span className="text-xl">🛡️</span>
+        <span className="text-xl" aria-hidden="true">🛡️</span>
         <h1 className="text-xl font-bold">Security Controls</h1>
       </header>
 
-      <main className="p-6 max-w-4xl mx-auto space-y-6">
+      <main className="p-4 sm:p-6 max-w-4xl mx-auto space-y-6">
+        {loading && <div className="text-gray-500 text-sm" role="status">Loading security controls…</div>}
+        {error && (
+          <div role="alert" className="bg-red-500/10 border border-red-500/40 text-red-300 rounded-lg p-4 text-sm">
+            {error}
+          </div>
+        )}
         {Object.entries(grouped).map(([category, items]) => (
           <section key={category} className="bg-warroom-surface border border-warroom-border rounded-lg p-6">
             <h2 className="text-lg font-semibold mb-4 text-warroom-success">{category}</h2>
