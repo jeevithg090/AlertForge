@@ -128,6 +128,8 @@ interface ApprovalStep {
   action_type?: string;
   rollback?: string;
   status: StepStatus;
+  /** Set when the two-person rule sent an approved step back for a second, distinct approver. */
+  firstApprover?: string;
 }
 
 interface HuntQuery { platform: string; query: string; description?: string }
@@ -181,19 +183,29 @@ function deriveFromEvents(events: SSEEvent[]) {
         toolResults[`${e.tool}|${e.round}`] = e;
         break;
       case 'approval.required':
-        if (e.step_id)
-          steps[e.step_id] = {
-            step_id: e.step_id,
-            step_number: Number(e.step_number),
-            description: e.description,
-            risk_level: e.risk_level,
-            action_type: e.action_type,
-            rollback: e.rollback && e.rollback !== 'None' ? e.rollback : undefined,
-            status: 'AWAITING_APPROVAL',
-          };
+        if (e.step_id) {
+          const prev = steps[e.step_id];
+          steps[e.step_id] = prev
+            ? // Re-requested after a first approval (two-person rule): keep the details.
+              { ...prev, status: 'AWAITING_APPROVAL', firstApprover: prev.firstApprover ?? 'another approver' }
+            : {
+                step_id: e.step_id,
+                step_number: Number(e.step_number),
+                description: e.description,
+                risk_level: e.risk_level,
+                action_type: e.action_type,
+                rollback: e.rollback && e.rollback !== 'None' ? e.rollback : undefined,
+                status: 'AWAITING_APPROVAL',
+              };
+        }
         break;
       case 'approval.received':
-        if (e.step_id && steps[e.step_id]) steps[e.step_id] = { ...steps[e.step_id], status: decisionToStatus(e.decision) };
+        if (e.step_id && steps[e.step_id])
+          steps[e.step_id] = {
+            ...steps[e.step_id],
+            status: decisionToStatus(e.decision),
+            firstApprover: typeof e.approver === 'string' ? e.approver : steps[e.step_id].firstApprover,
+          };
         break;
       case 'thinking.chunk': {
         const text = e.content ?? e.text;
@@ -277,8 +289,9 @@ export default function IncidentPage() {
       // PENDING steps are low-risk ones that run without approval; skip them.
       if (!s.status || s.status === 'PENDING') continue;
       const fromEvents = merged[s.id];
-      // The stored status is authoritative once it has moved past the event's view.
-      if (!fromEvents || s.status !== 'AWAITING_APPROVAL') {
+      // The stored status is authoritative once it has moved past the event's
+      // view, and when a stored first approval means a second one is pending.
+      if (!fromEvents || s.status !== 'AWAITING_APPROVAL' || s.approved_by) {
         merged[s.id] = {
           step_id: s.id,
           step_number: Number(s.step_number),
@@ -287,6 +300,7 @@ export default function IncidentPage() {
           action_type: s.action_type,
           rollback: s.rollback_procedure || fromEvents?.rollback,
           status: s.status,
+          firstApprover: s.status === 'AWAITING_APPROVAL' && s.approved_by ? s.approved_by : undefined,
         };
       }
     }
@@ -941,7 +955,9 @@ function ApprovalCard({ step, onDecided }: { step: ApprovalStep; onDecided: () =
   return (
     <article className="approval-card p-4 sm:p-5" aria-labelledby={`step-${step.step_id}`}>
       <div className="flex flex-wrap items-center gap-2">
-        <span className="badge border-warroom-warning/50 bg-warroom-warning/15 text-warroom-warning">Approval required</span>
+        <span className="badge border-warroom-warning/50 bg-warroom-warning/15 text-warroom-warning">
+          {step.firstApprover ? 'Second approver needed' : 'Approval required'}
+        </span>
         <span className="text-xs text-fg-muted">Step {step.step_number}</span>
         {step.action_type && <span className="font-mono text-2xs text-fg-subtle">{step.action_type}</span>}
       </div>
@@ -959,6 +975,11 @@ function ApprovalCard({ step, onDecided }: { step: ApprovalStep; onDecided: () =
         </div>
       </dl>
       {step.rollback && <p className="mt-1 text-xs text-fg-subtle">{step.rollback}</p>}
+      {step.firstApprover && (
+        <p className="mt-2 text-xs text-warroom-warning">
+          Two-person rule: approved by {step.firstApprover}. A different operator with the approver role must approve it too.
+        </p>
+      )}
 
       <div className="mt-3">
         <button
