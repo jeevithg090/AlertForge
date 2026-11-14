@@ -307,3 +307,42 @@ def test_incident_stream_replays_unnamed_events(client, monkeypatch):
         "id: 3",
     ]
     assert body.count('"type": "triage.complete"') == 1
+
+
+def test_all_incidents_stream_flushes_immediately(client, monkeypatch):
+    """A quiet stream must still send bytes at once so proxies flush headers
+    and the dashboard can show the live connection."""
+    from app.api import stream as stream_api
+
+    async def fake_subscribe_all():
+        yield {"type": "incident.created"}
+
+    monkeypatch.setattr(stream_api, "subscribe_all", fake_subscribe_all)
+    monkeypatch.setattr(settings, "auth_dev_bypass", True)
+    monkeypatch.setattr(settings, "environment", "development")
+
+    with client.stream("GET", "/api/v1/incidents/stream/all") as res:
+        assert res.status_code == 200
+        body = "".join(res.iter_text())
+
+    assert body.startswith(": connected")
+    assert "event:" not in body
+    assert body.count('"type": "incident.created"') == 1
+
+
+def test_malformed_incident_id_is_404_not_500(client, monkeypatch):
+    """A truncated incident link must read as "not found", not a server error."""
+    import asyncpg
+
+    async def bad_uuid(_incident_id):
+        raise asyncpg.exceptions.DataError(
+            "invalid input for query argument $1: 'abc' (invalid UUID 'abc')"
+        )
+
+    monkeypatch.setattr("app.db.incidents.get_incident", bad_uuid)
+    monkeypatch.setattr(settings, "auth_dev_bypass", True)
+    monkeypatch.setattr(settings, "environment", "development")
+
+    res = client.get("/api/v1/incidents/abc")
+    assert res.status_code == 404
+    assert res.json() == {"detail": "not found"}
