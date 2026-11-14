@@ -1,5 +1,8 @@
 # keep the docker build context lean — never copy the local venv or caches
 venv
+.venv
+detections
+purple_results
 __pycache__
 *.pyc
 .pytest_cache

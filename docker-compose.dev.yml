@@ -1,19 +1,28 @@
-# Development overrides — hot reload
-# Usage: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+# Development overrides — hot reload with source mounted into the containers.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 services:
   backend:
-    command: ["sh", "-c", "alembic upgrade head && python -m app.services.runbook_indexer || true && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"]
+    command: ["sh", "-c", "alembic upgrade head && (python -m app.services.runbook_indexer || true) && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"]
     environment:
       ENVIRONMENT: development
       LOG_LEVEL: DEBUG
+    volumes:
+      - ./backend:/app
+      - chromadata:/app/.chroma
 
   worker:
-    command: ["python", "-m", "app.pipeline.orchestrator"]
     environment:
       ENVIRONMENT: development
       LOG_LEVEL: DEBUG
+    volumes:
+      - ./backend:/app
+      - chromadata:/app/.chroma
 
   frontend:
+    build:
+      target: builder
     command: ["sh", "-c", "npm install && npm run dev"]
-    environment:
-      ENVIRONMENT: development
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next

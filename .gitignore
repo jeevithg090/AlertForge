@@ -70,7 +70,8 @@ chroma/
 docker-compose.override.yml
 
 # Generated detection rules (written at runtime by the Sigma generator)
-detections/generated/
+**/detections/generated/
+**/purple_results/
 
 # Logs
 *.log
