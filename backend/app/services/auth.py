@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.config import settings
@@ -18,6 +18,18 @@ from app.db.connection import fetchrow, fetchval
 logger = logging.getLogger("sentinelforge.auth")
 
 _bearer = HTTPBearer(auto_error=False)
+
+ROLES: tuple[str, ...] = ("viewer", "analyst", "approver", "admin")
+# Role groups used by the API routers. ``admin`` is always implicitly allowed.
+READ_ROLES: tuple[str, ...] = ("viewer", "analyst", "approver")
+ANALYST_ROLES: tuple[str, ...] = ("analyst", "approver")
+APPROVER_ROLES: tuple[str, ...] = ("approver",)
+
+_DEV_OPERATOR = {
+    "sub": "dev:anonymous-admin",
+    "role": "admin",
+    "name": "Dev Anonymous Admin",
+}
 
 # ---------- password hashing (stdlib only) ----------
 
@@ -92,9 +104,7 @@ async def get_operator_by_email(email: str) -> dict | None:
     return d
 
 
-async def create_operator(
-    email: str, password: str, role: str, display_name: str = ""
-) -> str:
+async def create_operator(email: str, password: str, role: str, display_name: str = "") -> str:
     pw_hash = hash_password(password)
     operator_id = await fetchval(
         """
@@ -133,34 +143,63 @@ async def seed_default_admin() -> None:
 # ---------- FastAPI dependencies ----------
 
 
-def current_operator(
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
-) -> dict:
-    if credentials is None:
-        if settings.environment == "development" and settings.auth_dev_bypass:
-            return {
-                "sub": "dev:anonymous-admin",
-                "role": "admin",
-                "name": "Dev Anonymous Admin",
-            }
+def _operator_from_token(token: str | None) -> dict:
+    if not token:
+        if settings.dev_auth_bypass_active:
+            return dict(_DEV_OPERATOR)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="missing authorization header",
+            headers={"WWW-Authenticate": "Bearer"},
         )
-    token = credentials.credentials
     return decode_token(token)
 
 
+def current_operator(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+) -> dict:
+    """Resolve the caller from ``Authorization: Bearer <jwt>``.
+
+    In development with ``AUTH_DEV_BYPASS=true`` an unauthenticated caller is
+    treated as an anonymous admin so the docker-compose demo works without a
+    login; that bypass is never honoured in any other environment.
+    """
+    return _operator_from_token(credentials.credentials if credentials else None)
+
+
+def stream_operator(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    access_token: str | None = Query(default=None, include_in_schema=False),
+) -> dict:
+    """Like :func:`current_operator`, but also accepts ``?access_token=`` because
+    browsers' ``EventSource`` cannot send an Authorization header."""
+    token = credentials.credentials if credentials else access_token
+    return _operator_from_token(token)
+
+
+def _check_role(op: dict, roles: tuple[str, ...]) -> dict:
+    if not role_allowed(str(op.get("role", "")), roles):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"requires one of {roles}",
+        )
+    return op
+
+
 def require_role(*roles: str):
+    """FastAPI dependency: the caller must hold one of ``roles`` (or be admin)."""
+
     async def _check(op: dict = Depends(current_operator)) -> dict:
-        if op.get("role") == "admin":
-            return op
-        if op.get("role") not in roles:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"requires one of {roles}",
-            )
-        return op
+        return _check_role(op, roles)
+
+    return _check
+
+
+def require_stream_role(*roles: str):
+    """Role check for SSE endpoints (token may come from the query string)."""
+
+    async def _check(op: dict = Depends(stream_operator)) -> dict:
+        return _check_role(op, roles)
 
     return _check
 
@@ -172,3 +211,8 @@ def role_allowed(role: str, allowed: tuple[str, ...]) -> bool:
     if role == "admin":
         return True
     return role in allowed
+
+
+def operator_id(op: dict) -> str:
+    """Stable actor string for audit entries."""
+    return str(op.get("sub") or "unknown")

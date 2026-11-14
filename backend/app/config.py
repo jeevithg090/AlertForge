@@ -11,12 +11,27 @@ origins, the legacy ``DASHSCOPE_API_KEY`` / ``QWEN_*`` environment variables are
 still accepted as aliases, and ``settings.qwen_*`` properties still resolve, so
 existing ``.env`` files and older imports keep working unchanged.
 """
+
 from __future__ import annotations
 
+import logging
 from functools import lru_cache
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger("sentinelforge.config")
+
+# Placeholder values that must never be used outside local development.
+INSECURE_SECRET_KEYS = frozenset(
+    {
+        "",
+        "dev-secret-change-me",
+        "change-me-to-a-long-random-string-used-for-hmac-webhook-verification",
+    }
+)
+INSECURE_ADMIN_PASSWORDS = frozenset({"", "changeme-admin"})
+MIN_SECRET_KEY_LENGTH = 32
 
 
 class Settings(BaseSettings):
@@ -61,7 +76,9 @@ class Settings(BaseSettings):
     )
     llm_request_timeout_seconds: int = Field(
         default=60,
-        validation_alias=AliasChoices("LLM_REQUEST_TIMEOUT_SECONDS", "QWEN_REQUEST_TIMEOUT_SECONDS"),
+        validation_alias=AliasChoices(
+            "LLM_REQUEST_TIMEOUT_SECONDS", "QWEN_REQUEST_TIMEOUT_SECONDS"
+        ),
     )
     # Local sentence-transformers embedding model for runbook semantic search
     # (no API cost — runs on CPU). Falls back to keyword search if unavailable.
@@ -111,6 +128,9 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     frontend_url: str = "http://localhost:3000"
     backend_url: str = "http://localhost:8000"
+    # Extra browser origins allowed by CORS (comma-separated). FRONTEND_URL is
+    # always allowed; a wildcard is never used because credentials are allowed.
+    cors_origins: str = ""
 
     # ---- Alert correlation / dedup engine ----
     # Alerts that share an entity (IP/user/host) or fingerprint with an OPEN
@@ -127,22 +147,76 @@ class Settings(BaseSettings):
     # ---- Action safety / guardrails (production containment) ----
     # The deterministic authorization layer between the LLM's proposed action and
     # any real mutation. The LLM never authorizes an action; this does.
-    action_kill_switch: bool = False          # global emergency stop for all mutating actions
-    action_dry_run_only: bool = True          # simulate mutations; never actually mutate prod (safe default)
-    action_enabled_types: str = (             # only these action types may run at all
+    action_kill_switch: bool = False  # global emergency stop for all mutating actions
+    action_dry_run_only: bool = (
+        True  # simulate mutations; never actually mutate prod (safe default)
+    )
+    action_enabled_types: str = (  # only these action types may run at all
         "notification,block_ip,suspend_account,isolate_host,rotate_credentials,quarantine_file"
     )
     # Extra protected targets (added to the safe built-in defaults). Comma-separated.
     # Globs allowed for users/hosts (fnmatch). IPs/CIDRs for the block list.
-    action_protected_ip_cidrs: str = ""       # never block these (RFC1918 + loopback always protected)
-    action_protected_users: str = ""          # never suspend/rotate (break-glass/service accts always protected)
-    action_protected_hosts: str = ""          # never isolate (domain controllers etc.)
+    action_protected_ip_cidrs: str = ""  # never block these (RFC1918 + loopback always protected)
+    action_protected_users: str = (
+        ""  # never suspend/rotate (break-glass/service accts always protected)
+    )
+    action_protected_hosts: str = ""  # never isolate (domain controllers etc.)
     # Blast-radius / rate limits.
     action_max_per_incident: int = 10
     action_max_per_window: int = 25
     action_window_seconds: int = 300
     # Severities whose mutating actions need a second, distinct approver.
     action_two_person_severities: str = "P1_CRITICAL"
+
+    # ---- Derived flags ----
+    @property
+    def is_development(self) -> bool:
+        return self.environment.strip().lower() in ("development", "dev", "local", "test")
+
+    @property
+    def webhook_secret_configured(self) -> bool:
+        """True when SECRET_KEY is a real secret, so webhook HMAC is enforced."""
+        return self.secret_key not in INSECURE_SECRET_KEYS
+
+    @property
+    def dev_auth_bypass_active(self) -> bool:
+        """Anonymous admin access is only ever honoured in development."""
+        return self.is_development and self.auth_dev_bypass
+
+    @property
+    def allowed_cors_origins(self) -> list[str]:
+        origins = [self.frontend_url, *(o.strip() for o in self.cors_origins.split(","))]
+        if self.is_development:
+            origins += ["http://localhost:3000", "http://127.0.0.1:3000"]
+        return list(dict.fromkeys(o.rstrip("/") for o in origins if o and o.strip() != "*"))
+
+    @model_validator(mode="after")
+    def _refuse_insecure_production_config(self) -> Settings:
+        """Fail fast instead of running a non-dev deployment with known secrets.
+
+        SECRET_KEY signs JWTs and webhook HMACs: a placeholder value would let
+        anyone mint an admin token.
+        """
+        if self.is_development:
+            if not self.webhook_secret_configured:
+                logger.warning(
+                    "SECRET_KEY is a placeholder — JWTs are forgeable and webhook HMAC "
+                    "is disabled. Fine for local development only."
+                )
+            return self
+        problems: list[str] = []
+        if not self.webhook_secret_configured or len(self.secret_key) < MIN_SECRET_KEY_LENGTH:
+            problems.append(
+                f"SECRET_KEY must be set to a random value of at least "
+                f"{MIN_SECRET_KEY_LENGTH} characters"
+            )
+        if self.default_admin_password in INSECURE_ADMIN_PASSWORDS:
+            problems.append("DEFAULT_ADMIN_PASSWORD must be changed from the default")
+        if problems:
+            raise ValueError(
+                f"Refusing to start with ENVIRONMENT={self.environment!r}: " + "; ".join(problems)
+            )
+        return self
 
     # ---- Provider-neutral capability flags ----
     @property

@@ -4,7 +4,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
@@ -22,7 +22,13 @@ from app.api import (
 )
 from app.config import settings
 from app.db.connection import close_db, init_db
-from app.services.auth import seed_default_admin
+from app.services.auth import (
+    ANALYST_ROLES,
+    READ_ROLES,
+    require_role,
+    require_stream_role,
+    seed_default_admin,
+)
 from app.services.redis_client import close_redis, init_redis
 from app.utils.correlation import CorrelationIdMiddleware
 
@@ -73,22 +79,47 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_url, "http://localhost:3000", "*"],
+    # Explicit origins only: a "*" origin combined with credentials would let
+    # any website make authenticated requests on an operator's behalf.
+    allow_origins=settings.allowed_cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Last-Event-ID", "X-SentinelForge-Signature"],
 )
 app.add_middleware(CorrelationIdMiddleware)
 
+_read = [Depends(require_role(*READ_ROLES))]
+
+# Public: liveness/readiness probes and login.
 app.include_router(health.router, prefix="/api/v1", tags=["health"])
-app.include_router(ingestion.router, prefix="/api/v1/ingest", tags=["ingestion"])
-app.include_router(incidents.router, prefix="/api/v1/incidents", tags=["incidents"])
-app.include_router(approvals.router, prefix="/api/v1/approvals", tags=["approvals"])
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
-app.include_router(stream.router, prefix="/api/v1", tags=["streaming"])
-app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["analytics"])
-app.include_router(hunt.router, prefix="/api/v1/hunt", tags=["threat-hunt"])
-app.include_router(security.router, prefix="/api/v1/security", tags=["security"])
+# Machine-to-machine webhooks are HMAC-verified; analyst endpoints check roles.
+app.include_router(ingestion.router, prefix="/api/v1/ingest", tags=["ingestion"])
+# Operator-facing APIs: any authenticated role may read; writes check per-route.
+app.include_router(
+    incidents.router, prefix="/api/v1/incidents", tags=["incidents"], dependencies=_read
+)
+app.include_router(
+    approvals.router, prefix="/api/v1/approvals", tags=["approvals"], dependencies=_read
+)
+app.include_router(
+    stream.router,
+    prefix="/api/v1",
+    tags=["streaming"],
+    dependencies=[Depends(require_stream_role(*READ_ROLES))],
+)
+app.include_router(
+    analytics.router, prefix="/api/v1/analytics", tags=["analytics"], dependencies=_read
+)
+app.include_router(
+    hunt.router,
+    prefix="/api/v1/hunt",
+    tags=["threat-hunt"],
+    dependencies=[Depends(require_role(*ANALYST_ROLES))],
+)
+app.include_router(
+    security.router, prefix="/api/v1/security", tags=["security"], dependencies=_read
+)
 
 
 @app.get("/metrics")
@@ -109,4 +140,4 @@ async def root() -> dict:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=settings.environment == "development")
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=settings.is_development)

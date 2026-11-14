@@ -1,5 +1,6 @@
 """Security controls API — surfaces prompt-injection blocks, approvals, and
 other security-relevant audit entries for the operator's Security panel."""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Query
@@ -28,7 +29,7 @@ async def security_controls() -> dict:
     """Self-reported security posture — matches the Security panel checklist.
     Only reports a control as 'active' when the corresponding code path is
     actually wired up, so the panel never lies to the operator."""
-    secret_configured = bool(settings.secret_key) and settings.secret_key != "dev-secret-change-me"
+    secret_configured = settings.webhook_secret_configured
     return {
         "controls": [
             {
@@ -48,8 +49,8 @@ async def security_controls() -> dict:
                 "note": (
                     "Active — every /ingest/siem|edr|ids|webhook call rejects requests whose "
                     "X-SentinelForge-Signature header is missing or invalid."
-                    if secret_configured else
-                    "Wired but in dev mode (SECRET_KEY is the default). Set SECRET_KEY to enforce."
+                    if secret_configured
+                    else "Wired but in dev mode (SECRET_KEY is the default). Set SECRET_KEY to enforce."
                 ),
             },
             {
