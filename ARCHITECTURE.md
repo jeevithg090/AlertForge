@@ -166,6 +166,10 @@ The gate (`app/pipeline/hitl_gate.py`) persists every step, then for each:
   P3 → 15min, P4 → 5min, P1/P2 → never.
 - Approve / reject / escalate endpoints use an atomic compare-and-set
   (`cas_update_step`) to prevent two operators from acting on the same step.
+- **Two-person rule:** when the guardrails return `REQUIRE_TWO_PERSON` (P1 by
+  default), the execution agent puts the step back to `AWAITING_APPROVAL` with
+  its first approver recorded. The next `approve` call from a *different*
+  approver is stored as `second_approver`; the same approver gets `409`.
 
 ## Action safety layer (`app/actions/`)
 
@@ -216,6 +220,16 @@ domain controllers, or a shell are all DENIED — even with two approvers.
 
 ## Security surface
 
+- **Authentication / RBAC** (`app/services/auth.py`): JWT (HS256, signed with
+  `SECRET_KEY`, 8h expiry) with roles `viewer` < `analyst` < `approver`, plus
+  `admin`. Read APIs need any role; feedback, hunts, detection rules and
+  analyst ingestion need `analyst`; approvals need `approver`. Identity for
+  audit entries always comes from the verified token. SSE endpoints also
+  accept `?access_token=` because `EventSource` cannot set headers.
+  `AUTH_DEV_BYPASS` (anonymous admin) is honoured only when
+  `ENVIRONMENT=development`, and the backend refuses to start in any other
+  environment with a placeholder `SECRET_KEY` or the default admin password.
+- **CORS** allows `FRONTEND_URL` plus `CORS_ORIGINS` — never `*`.
 - **Prompt-injection guard** (regex + optional fast-tier semantic scan) on
   every ingested finding; blocked attempts are audit-logged and surfaced on
   the Security panel live via the `security.event` SSE channel.

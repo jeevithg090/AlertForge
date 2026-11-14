@@ -68,6 +68,13 @@ In the dashboard click the new incident card. You will see, in real time:
 Click **✓ APPROVE** on the `block_ip` card. The OPS agent executes the
 `block_ip` tool, runs the validation check, and streams `step.complete`.
 
+For a `P1_CRITICAL` incident (try `--scenario ransomware`) the guardrails apply
+the two-person rule: after the first approval the card comes back asking for a
+second approver. Approve it again signed in as a *different* operator with the
+`approver` role (the same operator is refused). In the default development
+stack everyone is the anonymous admin, so create two approvers and sign in at
+`/login` to see this.
+
 ### 4. PIR + JIRA ticket (~30s)
 
 CHRON streams a formatted **Security Incident Report** (~Markdown rendered),
