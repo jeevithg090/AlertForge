@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
 from app.db.connection import execute, fetch, fetchrow, fetchval, get_pool
+
+logger = logging.getLogger("sentinelforge.db.incidents")
 
 
 def _new_id() -> str:
@@ -52,8 +55,13 @@ async def create_incident(
 
 # Statuses that are still "open" and therefore eligible to absorb a new alert.
 OPEN_STATUSES = (
-    "INGESTED", "TRIAGING", "INVESTIGATING", "PLANNING",
-    "AWAITING_APPROVAL", "EXECUTING", "ESCALATED",
+    "INGESTED",
+    "TRIAGING",
+    "INVESTIGATING",
+    "PLANNING",
+    "AWAITING_APPROVAL",
+    "EXECUTING",
+    "ESCALATED",
 )
 
 
@@ -163,7 +171,9 @@ async def correlate_or_create(
                 ORDER BY (correlation_key = $3) DESC, last_seen_at DESC
                 LIMIT 50
                 """,
-            list(OPEN_STATUSES), int(window_seconds), fingerprint or "",
+            list(OPEN_STATUSES),
+            int(window_seconds),
+            fingerprint or "",
         )
         for r in rows:
             d = _row_to_dict(r)
@@ -192,7 +202,9 @@ async def correlate_or_create(
                     WHERE id = $1::uuid
                     RETURNING alert_count
                     """,
-                _as_uuid(d["id"]), json.dumps([rec], default=str), json.dumps(merged, default=str),
+                _as_uuid(d["id"]),
+                json.dumps([rec], default=str),
+                json.dumps(merged, default=str),
             )
             return d["id"], True, reason, int(new_count or 0)
 
@@ -238,15 +250,21 @@ async def list_incidents(
     args: list[Any] = []
     idx = 1
     if status:
-        where.append(f"status = ${idx}"); args.append(status); idx += 1
+        where.append(f"status = ${idx}")
+        args.append(status)
+        idx += 1
     if severity:
-        where.append(f"severity = ${idx}"); args.append(severity); idx += 1
+        where.append(f"severity = ${idx}")
+        args.append(severity)
+        idx += 1
     if service:
-        where.append(f"affected_service ILIKE ${idx}"); args.append(f"%{service}%"); idx += 1
+        where.append(f"affected_service ILIKE ${idx}")
+        args.append(f"%{service}%")
+        idx += 1
     clause = ("WHERE " + " AND ".join(where)) if where else ""
     args += [limit, offset]
     rows = await fetch(
-        f"SELECT * FROM incidents {clause} ORDER BY created_at DESC LIMIT ${idx} OFFSET ${idx+1}",
+        f"SELECT * FROM incidents {clause} ORDER BY created_at DESC LIMIT ${idx} OFFSET ${idx + 1}",
         *args,
     )
     return [_row_to_dict(r) for r in rows]
@@ -271,24 +289,38 @@ async def update_incident(
     args: list[Any] = []
     idx = 1
     for name, val in [
-        ("severity", severity), ("category", category), ("status", status),
-        ("is_false_positive", is_false_positive), ("auto_resolved", auto_resolved),
+        ("severity", severity),
+        ("category", category),
+        ("status", status),
+        ("is_false_positive", is_false_positive),
+        ("auto_resolved", auto_resolved),
         ("mttr_seconds", mttr_seconds),
     ]:
         if val is not None:
-            fields.append(f"{name} = ${idx}"); args.append(val); idx += 1
+            fields.append(f"{name} = ${idx}")
+            args.append(val)
+            idx += 1
     for name, val in [
-        ("triage_result", triage_result), ("investigation_finding", investigation_finding),
+        ("triage_result", triage_result),
+        ("investigation_finding", investigation_finding),
         ("remediation_plan", remediation_plan),
     ]:
         if val is not None:
-            fields.append(f"{name} = ${idx}::jsonb"); args.append(json.dumps(val, default=str)); idx += 1
+            fields.append(f"{name} = ${idx}::jsonb")
+            args.append(json.dumps(val, default=str))
+            idx += 1
     if pir_report is not None:
-        fields.append(f"pir_report = ${idx}"); args.append(pir_report); idx += 1
+        fields.append(f"pir_report = ${idx}")
+        args.append(pir_report)
+        idx += 1
     if qwen_tokens_used is not None:
-        fields.append(f"qwen_tokens_used = COALESCE(qwen_tokens_used,0) + ${idx}"); args.append(qwen_tokens_used); idx += 1
+        fields.append(f"qwen_tokens_used = COALESCE(qwen_tokens_used,0) + ${idx}")
+        args.append(qwen_tokens_used)
+        idx += 1
     if status == "RESOLVED":
-        fields.append(f"resolved_at = ${idx}"); args.append(datetime.now(timezone.utc)); idx += 1
+        fields.append(f"resolved_at = ${idx}")
+        args.append(datetime.now(timezone.utc))
+        idx += 1
     fields.append("updated_at = NOW()")
     args.append(_as_uuid(incident_id))
     await execute(
@@ -298,6 +330,7 @@ async def update_incident(
 
 
 # ---------- Remediation steps ----------
+
 
 async def create_steps(incident_id: str, steps: list[dict[str, Any]]) -> list[str]:
     ids: list[str] = []
@@ -354,9 +387,11 @@ async def update_step(step_id: str, **fields) -> None:
     idx = 1
     for name, val in fields.items():
         if name in ("tool_parameters",):
-            sets.append(f"{name} = ${idx}::jsonb"); args.append(json.dumps(val, default=str))
+            sets.append(f"{name} = ${idx}::jsonb")
+            args.append(json.dumps(val, default=str))
         else:
-            sets.append(f'{name} = ${idx}'); args.append(val)
+            sets.append(f"{name} = ${idx}")
+            args.append(val)
         idx += 1
     args.append(_as_uuid(step_id))
     await execute(
@@ -365,7 +400,9 @@ async def update_step(step_id: str, **fields) -> None:
     )
 
 
-async def cas_update_step(step_id: str, *, from_status: str, to_status: str, approved_by: str | None = None) -> bool:
+async def cas_update_step(
+    step_id: str, *, from_status: str, to_status: str, approved_by: str | None = None
+) -> bool:
     """Atomic compare-and-set on step status.
 
     Returns True if a row was actually updated (i.e. the step was in ``from_status``
@@ -376,7 +413,9 @@ async def cas_update_step(step_id: str, *, from_status: str, to_status: str, app
     idx = 2
     extra_sets = ""
     if approved_by is not None:
-        extra_sets = f", approved_by = ${idx}"; args.append(approved_by); idx += 1
+        extra_sets = f", approved_by = ${idx}"
+        args.append(approved_by)
+        idx += 1
     args += [_as_uuid(step_id), from_status]
     rowcount = await fetchval(
         f"""
@@ -422,11 +461,31 @@ def _coerce_json(value: Any) -> Any:
     return value or {}
 
 
+# JSONB columns on incidents / remediation_steps. asyncpg has no JSON codec
+# registered, so these arrive as JSON text and are decoded here so every caller
+# (API responses, agents) sees dicts/lists rather than strings.
+JSONB_COLUMNS = frozenset(
+    {
+        "triage_result",
+        "investigation_finding",
+        "remediation_plan",
+        "correlated_entities",
+        "related_signals",
+        "tool_parameters",
+    }
+)
+
+
 def _row_to_dict(row) -> dict[str, Any]:
     d = dict(row)
     for k, v in list(d.items()):
         if isinstance(v, datetime):
             d[k] = v.isoformat()
-        if isinstance(v, (uuid.UUID,)):
+        elif isinstance(v, uuid.UUID):
             d[k] = str(v)
+        elif k in JSONB_COLUMNS and isinstance(v, str):
+            try:
+                d[k] = json.loads(v)
+            except json.JSONDecodeError:
+                logger.warning("column %s holds invalid JSON; returning raw text", k)
     return d
