@@ -17,6 +17,7 @@ import {
   rejectStep,
   submitFeedback,
 } from '@/lib/api';
+import ErrorNotice from '@/components/ErrorNotice';
 
 function errorMessage(err: unknown, fallback: string): string {
   if (err instanceof ApiError) {
@@ -119,7 +120,7 @@ export default function IncidentPage() {
   const [detectionRule, setDetectionRule] = useState<{ rule: ApiRecord; yaml: string; path: string } | null>(null);
   const [detectionLoading, setDetectionLoading] = useState(false);
   const [actionError, setActionError] = useState('');
-  const [loadError, setLoadError] = useState('');
+  const [loadError, setLoadError] = useState<unknown>(null);
   const chatRef = useRef<HTMLDivElement>(null);
 
   const runHunt = async () => {
@@ -157,7 +158,7 @@ export default function IncidentPage() {
     if (!incidentId) return;
     fetchIncident(incidentId)
       .then(setIncident)
-      .catch(err => setLoadError(errorMessage(err, 'Could not load incident')));
+      .catch(setLoadError);
     fetchIncidentEvents(incidentId, 500).then(data => {
       const evs = ((data.events || []) as SSEEvent[]).slice().reverse(); // restore oldest-first
       const stepsFromEvs: Record<string, ApprovalStep> = {};
@@ -263,9 +264,9 @@ export default function IncidentPage() {
   return (
     <div className="min-h-screen bg-warroom-bg text-gray-200">
       <header className="border-b border-warroom-border px-4 sm:px-6 py-3 flex flex-wrap gap-2 items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Link href="/dashboard" className="text-gray-400 hover:text-white">← Dashboard</Link>
-          <span className="text-sm text-gray-500">|</span>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
+          <Link href="/dashboard" className="text-gray-400 hover:text-white whitespace-nowrap">← Dashboard</Link>
+          <span className="text-sm text-gray-500" aria-hidden="true">|</span>
           <span className="text-sm font-mono">{incidentId.slice(0, 12)}</span>
           {incident && (
             <span className={`px-2 py-0.5 rounded text-xs font-bold text-white ${
@@ -288,19 +289,15 @@ export default function IncidentPage() {
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2 text-sm">
+        <nav aria-label="Primary" className="flex items-center gap-2 text-sm">
           <Link href="/analytics" className="text-gray-400 hover:text-white">Analytics</Link>
           <Link href="/security" className="text-gray-400 hover:text-white">Security</Link>
-          <span className={`w-2 h-2 rounded-full ${connected ? 'bg-warroom-success animate-pulse-dot' : 'bg-red-500'}`} />
-          <span className="text-xs text-gray-400">{connected ? 'Live' : 'Disconnected'}</span>
-        </div>
+          <span aria-hidden="true" className={`w-2 h-2 rounded-full ${connected ? 'bg-warroom-success animate-pulse-dot' : 'bg-red-500'}`} />
+          <span className="text-xs text-gray-400" role="status">{connected ? 'Live' : 'Disconnected'}</span>
+        </nav>
       </header>
 
-      {(loadError || actionError) && (
-        <div role="alert" className="mx-4 mt-3 bg-red-500/10 border border-red-500/40 text-red-300 rounded-lg p-3 text-sm">
-          {loadError || actionError}
-        </div>
-      )}
+      <ErrorNotice error={loadError || actionError} className="mx-4 mt-3" />
       <main className="grid grid-cols-1 lg:grid-cols-4 gap-4 p-4 lg:h-[calc(100vh-60px)]">
         {/* War Room Chat */}
         <div className="lg:col-span-3 flex flex-col gap-4 overflow-hidden">

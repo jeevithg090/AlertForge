@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { useAllIncidentsStream, SSEEvent } from '@/lib/sse';
 import { ApiError, fetchIncidents, fetchPendingApprovals, ingestText } from '@/lib/api';
+import ErrorNotice from '@/components/ErrorNotice';
 
 interface Incident {
   id: string;
@@ -71,7 +72,7 @@ export default function DashboardPage() {
   const eventLogRef = useRef<HTMLDivElement>(null);
 
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
+  const [loadError, setLoadError] = useState<unknown>(null);
 
   useEffect(() => {
     fetchIncidents()
@@ -81,7 +82,7 @@ export default function DashboardPage() {
           setApprovalCount(data.incidents.filter((i: Incident) => i.status === 'AWAITING_APPROVAL').length);
         }
       })
-      .catch(err => setLoadError(err instanceof ApiError ? err.message : 'Could not load incidents'))
+      .catch(setLoadError)
       .finally(() => setLoading(false));
     fetchPendingApprovals().then(data => {
       // API returns { pending: [...], count: N } — not an array.
@@ -132,6 +133,7 @@ export default function DashboardPage() {
         <nav aria-label="Primary" className="flex flex-wrap items-center gap-4 text-sm">
           <Link href="/analytics" className="text-gray-400 hover:text-white">Analytics</Link>
           <Link href="/security" className="text-gray-400 hover:text-white">Security</Link>
+          <Link href="/login" className="text-gray-400 hover:text-white">Sign in</Link>
           <span className="text-gray-400">
             Active: <span className="text-warroom-alert font-bold">{active.length}</span>
           </span>
@@ -160,11 +162,7 @@ export default function DashboardPage() {
             {loading && (
               <div className="text-gray-500 text-center py-12" role="status">Loading incidents…</div>
             )}
-            {loadError && (
-              <div role="alert" className="bg-red-500/10 border border-red-500/40 text-red-300 rounded-lg p-4 text-sm">
-                {loadError}. Is the backend running on {process.env.NEXT_PUBLIC_API_URL || 'this origin'}?
-              </div>
-            )}
+            <ErrorNotice error={loadError} />
             {!loading && !loadError && incidents.length === 0 && (
               <div className="text-gray-500 text-center py-12 border border-warroom-border rounded-lg">
                 No incidents yet. Fire a demo alert to get started.
