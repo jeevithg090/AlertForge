@@ -4,9 +4,10 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI
+import asyncpg
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from app.api import (
@@ -91,6 +92,17 @@ app.add_middleware(CorrelationIdMiddleware)
 _read = [Depends(require_role(*READ_ROLES))]
 
 # Public: liveness/readiness probes and login.
+
+
+@app.exception_handler(asyncpg.exceptions.DataError)
+async def _bad_identifier(_request: Request, exc: asyncpg.exceptions.DataError) -> JSONResponse:
+    """A malformed UUID in a path (e.g. a truncated incident link) can't match
+    any row, so answer 404 like any other unknown id instead of a 500."""
+    if "invalid UUID" in str(exc):
+        return JSONResponse(status_code=404, content={"detail": "not found"})
+    raise exc
+
+
 app.include_router(health.router, prefix="/api/v1", tags=["health"])
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 # Machine-to-machine webhooks are HMAC-verified; analyst endpoints check roles.

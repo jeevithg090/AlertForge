@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 from fastapi import APIRouter, Request
-from sse_starlette.sse import EventSourceResponse
+from sse_starlette.sse import EventSourceResponse, ServerSentEvent
 
 from app.services.redis_client import (
     fetch_event_log,
@@ -17,6 +17,11 @@ router = APIRouter()
 # Events are sent as unnamed SSE messages so a browser EventSource receives all
 # of them via ``onmessage``; the event kind is the ``type`` field of the JSON
 # payload. (Named events would each need their own addEventListener.)
+#
+# Each stream opens with an SSE comment. Proxies (including the Next.js dev
+# rewrite) hold a response until its first body bytes arrive, so without it a
+# quiet stream would look "disconnected" in the UI until the first event.
+_OPEN = ServerSentEvent(comment="connected")
 
 
 def _parse_last_event_id(request: Request) -> int:
@@ -37,6 +42,7 @@ async def incident_stream(incident_id: str, request: Request):
     """
 
     async def event_generator():
+        yield _OPEN
         last_seen = _parse_last_event_id(request)
         # Replay missed events first, oldest-first.
         replayed = await replay_events_from(incident_id, after_index=last_seen)
@@ -67,6 +73,7 @@ async def all_incidents_stream(request: Request):
     """SSE stream of all active incidents (wildcard pub/sub)."""
 
     async def event_generator():
+        yield _OPEN
         async for event in subscribe_all():
             if await request.is_disconnected():
                 break
