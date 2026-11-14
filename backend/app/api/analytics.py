@@ -139,12 +139,14 @@ async def feedback_analytics() -> dict:
     agreements = sum(r["count"] for r in by_pair if r["ai_verdict"] == r["human_verdict"])
     agreement_rate = round(agreements / total, 3) if total else 0.0
     false_negatives = sum(
-        r["count"] for r in by_pair
+        r["count"]
+        for r in by_pair
         if r["ai_verdict"] in ("FALSE_POSITIVE", "BENIGN_ANOMALY")
         and r["human_verdict"] == "TRUE_POSITIVE"
     )
     false_positives_confirmed = sum(
-        r["count"] for r in by_pair
+        r["count"]
+        for r in by_pair
         if r["ai_verdict"] == "TRUE_POSITIVE"
         and r["human_verdict"] in ("FALSE_POSITIVE", "BENIGN_ANOMALY")
     )
@@ -182,8 +184,9 @@ async def purple_results() -> dict:
     import os
 
     path = os.path.join("purple_results", "latest.json")
-    if os.path.exists(path):
-        with open(path) as f:
+    # Tiny local file written by `python -m app.purple`; blocking I/O is fine here.
+    if os.path.exists(path):  # noqa: ASYNC240
+        with open(path, encoding="utf-8") as f:  # noqa: ASYNC230
             return json.load(f)
     return {"available": False}
 

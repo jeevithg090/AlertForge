@@ -10,7 +10,9 @@ def score_chain(chain, observed: dict) -> dict:
     observed_techniques = {_normalize_technique(t) for t in observed.get("technique_ids", [])}
 
     technique_hits = expected_techniques & observed_techniques
-    technique_recall = len(technique_hits) / len(expected_techniques) if expected_techniques else 1.0
+    technique_recall = (
+        len(technique_hits) / len(expected_techniques) if expected_techniques else 1.0
+    )
 
     correlation_ok = observed.get("incidents_created", 1) == 1 if chain.expect_correlated else True
     verdict_ok = observed.get("verdict", "") == "TRUE_POSITIVE"
@@ -36,9 +38,7 @@ def aggregate(scores: list[dict]) -> dict:
     n = len(scores)
     k = sum(1 for s in scores if s["passed"])
     detection_rate = round(k / n, 3) if n else 0.0
-    avg_recall = round(
-        sum(s["technique_recall"] for s in scores) / n, 3
-    ) if n else 0.0
+    avg_recall = round(sum(s["technique_recall"] for s in scores) / n, 3) if n else 0.0
 
     return {
         "chains": n,

@@ -1,4 +1,5 @@
 """Typed models for the action safety layer."""
+
 from __future__ import annotations
 
 import enum
@@ -47,7 +48,7 @@ class ActionRequest:
     """A single proposed containment action, normalized for authorization."""
 
     action_type: str
-    target: str                      # primary target value (an IP / username / hostname / …)
+    target: str  # primary target value (an IP / username / hostname / …)
     incident_id: str
     severity: str = "P3_MEDIUM"
     reason: str = ""
@@ -69,8 +70,8 @@ class ActionRequest:
 
 
 class Decision(str, enum.Enum):
-    ALLOW = "ALLOW"                       # non-mutating, safe → may run without a human
-    DENY = "DENY"                         # prohibited — never runs, even with approval
+    ALLOW = "ALLOW"  # non-mutating, safe → may run without a human
+    DENY = "DENY"  # prohibited — never runs, even with approval
     REQUIRE_APPROVAL = "REQUIRE_APPROVAL"  # mutating — needs one human approver
     REQUIRE_TWO_PERSON = "REQUIRE_TWO_PERSON"  # high-stakes — needs two distinct approvers
 
@@ -103,9 +104,9 @@ class GuardrailContext:
     """
 
     now: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    incident_action_count: int = 0        # mutating actions already taken on this incident
-    window_action_count: int = 0          # mutating actions across the whole system in the window
-    approvers: tuple[str, ...] = ()        # distinct human approvers who have signed off
+    incident_action_count: int = 0  # mutating actions already taken on this incident
+    window_action_count: int = 0  # mutating actions across the whole system in the window
+    approvers: tuple[str, ...] = ()  # distinct human approvers who have signed off
 
 
 class ActionStatus(str, enum.Enum):

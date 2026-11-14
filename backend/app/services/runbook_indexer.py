@@ -4,6 +4,7 @@ Indexes all markdown runbooks into ChromaDB using text-embedding-v4
 (or sentence-transformers fallback). Provides semantic search for the
 Investigation Agent's search_runbook tool.
 """
+
 from __future__ import annotations
 
 import logging
@@ -42,7 +43,9 @@ def _get_embeddings(texts: list[str]) -> list[list[float]]:
         try:
             return _qwen_embeddings(texts, settings)
         except Exception as exc:
-            logger.warning("hosted embeddings failed (%s), falling back to sentence-transformers", exc)
+            logger.warning(
+                "hosted embeddings failed (%s), falling back to sentence-transformers", exc
+            )
 
     return _local_embeddings(texts)
 
@@ -58,7 +61,9 @@ def _qwen_embeddings(texts: list[str], settings) -> list[list[float]]:
             url = f"{settings.llm_base_url}/embeddings"
             headers = {"Authorization": f"Bearer {settings.llm_api_key}"}
             payload = {"model": settings.embedding_model, "input": texts}
-            async with session.post(url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+            async with session.post(
+                url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=30)
+            ) as resp:
                 data = await resp.json()
                 return [item["embedding"] for item in data["data"]]
 
@@ -66,6 +71,7 @@ def _qwen_embeddings(texts: list[str], settings) -> list[list[float]]:
         loop = asyncio.get_event_loop()
         if loop.is_running():
             import concurrent.futures
+
             with concurrent.futures.ThreadPoolExecutor() as pool:
                 return pool.submit(asyncio.run, _fetch()).result()
         return loop.run_until_complete(_fetch())
@@ -106,12 +112,14 @@ def _load_runbooks(directory: str) -> list[dict[str, str]]:
             content = md_file.read_text(encoding="utf-8")
             title = content.split("\n")[0].lstrip("# ").strip()
             rel_path = str(md_file.relative_to(base))
-            runbooks.append({
-                "title": title,
-                "content": content,
-                "path": f"runbooks/{rel_path}",
-                "category": md_file.parent.name,
-            })
+            runbooks.append(
+                {
+                    "title": title,
+                    "content": content,
+                    "path": f"runbooks/{rel_path}",
+                    "category": md_file.parent.name,
+                }
+            )
         except Exception as exc:
             logger.warning("Failed to load %s: %s", md_file, exc)
     return runbooks
@@ -130,8 +138,7 @@ async def index_runbooks(directory: str = RUNBOOKS_DIR) -> int:
 
     ids = [f"runbook_{i}" for i in range(len(runbooks))]
     metadatas = [
-        {"title": rb["title"], "path": rb["path"], "category": rb["category"]}
-        for rb in runbooks
+        {"title": rb["title"], "path": rb["path"], "category": rb["category"]} for rb in runbooks
     ]
 
     collection.upsert(ids=ids, embeddings=embeddings, documents=texts, metadatas=metadatas)
@@ -158,13 +165,15 @@ async def search_runbooks(query: str, top_k: int = 3) -> list[dict[str, Any]]:
         meta = results["metadatas"][0][i]
         distance = results["distances"][0][i]
         doc = results["documents"][0][i] if results.get("documents") else ""
-        out.append({
-            "title": meta.get("title", ""),
-            "path": meta.get("path", ""),
-            "category": meta.get("category", ""),
-            "relevance": round(1.0 - distance, 3),
-            "summary": doc[:200] if doc else "",
-        })
+        out.append(
+            {
+                "title": meta.get("title", ""),
+                "path": meta.get("path", ""),
+                "category": meta.get("category", ""),
+                "relevance": round(1.0 - distance, 3),
+                "summary": doc[:200] if doc else "",
+            }
+        )
     return out
 
 

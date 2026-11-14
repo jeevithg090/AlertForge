@@ -9,9 +9,11 @@ Consumes each stream with a consumer group and dispatches to the matching agent.
               alerts:planned ─► hitl_gate ─► execution_agent ─► alerts:executing
               alerts:resolved ─► pir_agent
 """
+
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import signal
 import time
@@ -72,8 +74,15 @@ async def _dispatch_triage(msg_id: str, payload: dict[str, Any]) -> None:
             triage_result=result.model_dump(mode="json"),
             status="INVESTIGATING",
         )
-        await publish_to_stream("triaged", {"incident_id": incident_id, "triage": result.model_dump(mode="json")})
-    await publish_event(incident_id, make_event("triage.complete", incident_id, severity=result.severity.value, verdict=verdict.value))
+        await publish_to_stream(
+            "triaged", {"incident_id": incident_id, "triage": result.model_dump(mode="json")}
+        )
+    await publish_event(
+        incident_id,
+        make_event(
+            "triage.complete", incident_id, severity=result.severity.value, verdict=verdict.value
+        ),
+    )
 
 
 async def _dispatch_investigation(msg_id: str, payload: dict[str, Any]) -> None:
@@ -88,8 +97,13 @@ async def _dispatch_investigation(msg_id: str, payload: dict[str, Any]) -> None:
         status="PLANNING",
         investigation_finding=finding.model_dump(mode="json"),
     )
-    await publish_event(incident_id, make_event("investigation.complete", incident_id, confidence=finding.confidence_score))
-    await publish_to_stream("investigated", {"incident_id": incident_id, "finding": finding.model_dump(mode="json")})
+    await publish_event(
+        incident_id,
+        make_event("investigation.complete", incident_id, confidence=finding.confidence_score),
+    )
+    await publish_to_stream(
+        "investigated", {"incident_id": incident_id, "finding": finding.model_dump(mode="json")}
+    )
 
 
 async def _dispatch_remediation(msg_id: str, payload: dict[str, Any]) -> None:
@@ -101,14 +115,18 @@ async def _dispatch_remediation(msg_id: str, payload: dict[str, Any]) -> None:
     if not incident:
         return
     agent = RemediationAgent()
-    plan = await agent.run(incident_id, incident.get("investigation_finding") or payload.get("finding") or {})
+    plan = await agent.run(
+        incident_id, incident.get("investigation_finding") or payload.get("finding") or {}
+    )
     await incidents_db.update_incident(
         incident_id,
         remediation_plan=plan.model_dump(mode="json"),
     )
     await publish_event(
         incident_id,
-        make_event("plan.generated", incident_id, steps=len(plan.steps), confidence=plan.confidence_score),
+        make_event(
+            "plan.generated", incident_id, steps=len(plan.steps), confidence=plan.confidence_score
+        ),
     )
     if plan.confidence_score < 0.6 and plan.escalation_recommendation:
         await incidents_db.update_incident(incident_id, status="ESCALATED")
@@ -155,7 +173,9 @@ async def _consume_stage(stage: str) -> None:
     group_key, handler = _HANDLERS[stage]
     while _RUNNING:
         try:
-            messages = await read_from_group(stage, f"{CONSUMER}-{group_key}", count=5, block_ms=2000)
+            messages = await read_from_group(
+                stage, f"{CONSUMER}-{group_key}", count=5, block_ms=2000
+            )
         except Exception as exc:
             logger.warning("read_from_group(%s) failed: %s", stage, exc)
             await asyncio.sleep(2)
@@ -165,6 +185,7 @@ async def _consume_stage(stage: str) -> None:
                 t0 = time.monotonic()
                 await handler(msg_id, payload)
                 from app.services.metrics import record_stage
+
                 record_stage(group_key, time.monotonic() - t0)
                 await ack_message(stage, msg_id)
             except Exception as exc:
@@ -177,7 +198,9 @@ async def run() -> None:
     from app.db.connection import init_db
     from app.services.redis_client import init_redis
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-5s [%(name)s] %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)-5s [%(name)s] %(message)s"
+    )
     logger.info("orchestrator %s starting", CONSUMER)
     await init_db()
     await init_redis()
@@ -191,10 +214,8 @@ async def run() -> None:
             loop.call_soon_threadsafe(stop.set_result, None)
 
     for sig in (signal.SIGINT, signal.SIGTERM):
-        try:
+        with contextlib.suppress(NotImplementedError):
             loop.add_signal_handler(sig, _stop)
-        except NotImplementedError:
-            pass
 
     tasks = [asyncio.create_task(_consume_stage(stage)) for stage in _HANDLERS]
     # HITL timeout auto-approve sweeper

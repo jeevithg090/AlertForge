@@ -35,8 +35,11 @@ class EventType(str, Enum):
 
 def make_event(event_type: EventType | str, incident_id: str, **extra: Any) -> dict:
     """Build a dashboard event envelope."""
-    return {"type": event_type.value if isinstance(event_type, EventType) else event_type,
-            "incident_id": incident_id, **extra}
+    return {
+        "type": event_type.value if isinstance(event_type, EventType) else event_type,
+        "incident_id": incident_id,
+        **extra,
+    }
 
 
 __all__ = ["EventType", "make_event"]

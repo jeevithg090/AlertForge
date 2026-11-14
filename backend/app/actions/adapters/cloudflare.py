@@ -57,7 +57,11 @@ class CloudflareBlockIPAdapter(ActionAdapter):
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.get(read_url, params=read_params, headers=headers)
             if resp.status_code >= 400:
-                return {"success": False, "error": f"Cloudflare read error: {resp.status_code}", "target": ip}
+                return {
+                    "success": False,
+                    "error": f"Cloudflare read error: {resp.status_code}",
+                    "target": ip,
+                }
             data = resp.json()
             existing = data.get("result", [])
             if existing:
@@ -82,7 +86,11 @@ class CloudflareBlockIPAdapter(ActionAdapter):
             )
             if create_resp.status_code >= 400:
                 err_body = create_resp.text
-                return {"success": False, "error": f"Cloudflare create error: {create_resp.status_code} {err_body}", "target": ip}
+                return {
+                    "success": False,
+                    "error": f"Cloudflare create error: {create_resp.status_code} {err_body}",
+                    "target": ip,
+                }
             result = create_resp.json()
             if not result.get("success"):
                 errors = result.get("errors", [])

@@ -7,6 +7,7 @@ Two layers run on every ingested alert before any agent touches it:
 
 Blocked attempts are audited and surfaced on the dashboard Security panel.
 """
+
 from __future__ import annotations
 
 import logging

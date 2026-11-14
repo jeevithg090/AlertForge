@@ -20,6 +20,7 @@ def test_good_verdict_accepted():
 
 def test_agreement_stats_perfect():
     from app.eval.feedback_export import agreement_stats
+
     rows = [
         {"ai_verdict": "TRUE_POSITIVE", "human_verdict": "TRUE_POSITIVE", "count": 10},
     ]
@@ -30,6 +31,7 @@ def test_agreement_stats_perfect():
 
 def test_agreement_stats_false_negatives():
     from app.eval.feedback_export import agreement_stats
+
     rows = [
         {"ai_verdict": "FALSE_POSITIVE", "human_verdict": "TRUE_POSITIVE", "count": 3},
         {"ai_verdict": "TRUE_POSITIVE", "human_verdict": "TRUE_POSITIVE", "count": 7},
@@ -41,6 +43,7 @@ def test_agreement_stats_false_negatives():
 
 def test_agreement_stats_by_pair():
     from app.eval.feedback_export import agreement_stats
+
     rows = [
         {"ai_verdict": "TRUE_POSITIVE", "human_verdict": "TRUE_POSITIVE", "count": 5},
         {"ai_verdict": "TRUE_POSITIVE", "human_verdict": "FALSE_POSITIVE", "count": 2},
@@ -51,14 +54,17 @@ def test_agreement_stats_by_pair():
 
 def test_feedback_export_constructs_eval_case():
     from app.eval.feedback_export import feedback_row_to_eval_case
-    case = feedback_row_to_eval_case({
-        "incident_id": "abc12345-0000-0000-0000-000000000000",
-        "alert_message": "Test alert",
-        "human_verdict": "TRUE_POSITIVE",
-        "human_severity": "P2_HIGH",
-        "ai_verdict": "FALSE_POSITIVE",
-        "ai_severity": "P3_MEDIUM",
-    })
+
+    case = feedback_row_to_eval_case(
+        {
+            "incident_id": "abc12345-0000-0000-0000-000000000000",
+            "alert_message": "Test alert",
+            "human_verdict": "TRUE_POSITIVE",
+            "human_severity": "P2_HIGH",
+            "ai_verdict": "FALSE_POSITIVE",
+            "ai_severity": "P3_MEDIUM",
+        }
+    )
     assert "fb_abc12345" in case["name"]
     assert case["expected_verdict"] == "TRUE_POSITIVE"
     assert case["expected_severity"] == "P2_HIGH"

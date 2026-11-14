@@ -44,7 +44,9 @@ def test_tags_correct_format():
         "affected_service": "bastion",
         "alert_message": "Brute force",
         "triage_result": {
-            "attack_techniques": [{"technique_id": "T1110", "name": "Brute Force", "confidence": 0.9}],
+            "attack_techniques": [
+                {"technique_id": "T1110", "name": "Brute Force", "confidence": 0.9}
+            ],
         },
         "investigation_finding": {"iocs": []},
     }
@@ -60,7 +62,9 @@ def test_ioc_ip_appears_in_detection():
         "affected_service": "web",
         "alert_message": "Suspicious login",
         "triage_result": {
-            "attack_techniques": [{"technique_id": "T1078", "name": "Valid Accounts", "confidence": 0.8}],
+            "attack_techniques": [
+                {"technique_id": "T1078", "name": "Valid Accounts", "confidence": 0.8}
+            ],
         },
         "investigation_finding": {
             "iocs": [{"type": "ip", "value": "198.51.100.77", "verdict": "MALICIOUS"}],
@@ -83,7 +87,9 @@ def test_yaml_round_trip():
         "affected_service": "mail",
         "alert_message": "Phishing detected",
         "triage_result": {
-            "attack_techniques": [{"technique_id": "T1566", "name": "Phishing", "confidence": 0.85}],
+            "attack_techniques": [
+                {"technique_id": "T1566", "name": "Phishing", "confidence": 0.85}
+            ],
         },
         "investigation_finding": {"iocs": []},
     }
@@ -95,16 +101,26 @@ def test_yaml_round_trip():
 
 
 def test_level_follows_severity():
-    low = build_sigma_rule({
-        "severity": "P4_LOW", "affected_service": "x", "alert_message": "x",
-        "triage_result": {}, "investigation_finding": {},
-    })
+    low = build_sigma_rule(
+        {
+            "severity": "P4_LOW",
+            "affected_service": "x",
+            "alert_message": "x",
+            "triage_result": {},
+            "investigation_finding": {},
+        }
+    )
     assert low["level"] == "medium"
 
-    high = build_sigma_rule({
-        "severity": "P1_CRITICAL", "affected_service": "x", "alert_message": "x",
-        "triage_result": {}, "investigation_finding": {},
-    })
+    high = build_sigma_rule(
+        {
+            "severity": "P1_CRITICAL",
+            "affected_service": "x",
+            "alert_message": "x",
+            "triage_result": {},
+            "investigation_finding": {},
+        }
+    )
     assert high["level"] == "high"
 
 
@@ -130,7 +146,9 @@ def test_technique_id_normalized():
         "affected_service": "bastion",
         "alert_message": "Brute force",
         "triage_result": {
-            "attack_techniques": [{"technique_id": "T1110.003", "name": "Password Spray", "confidence": 0.9}],
+            "attack_techniques": [
+                {"technique_id": "T1110.003", "name": "Password Spray", "confidence": 0.9}
+            ],
         },
         "investigation_finding": {"iocs": []},
     }

@@ -11,8 +11,8 @@ class AlertSource(str, Enum):
     SIEM = "siem"
     EDR = "edr"
     IDS = "ids"
-    EMAIL = "email"          # phishing reports / SOAR email ingestion
-    SLACK = "slack"          # analyst-pasted alerts
+    EMAIL = "email"  # phishing reports / SOAR email ingestion
+    SLACK = "slack"  # analyst-pasted alerts
     PAGERDUTY = "pagerduty"
     WEBHOOK = "webhook"
     GENERIC = "generic"
@@ -28,7 +28,7 @@ class IncidentStatus(str, Enum):
     AWAITING_APPROVAL = "AWAITING_APPROVAL"
     EXECUTING = "EXECUTING"
     RESOLVED = "RESOLVED"
-    DISMISSED = "DISMISSED"      # false positive
+    DISMISSED = "DISMISSED"  # false positive
     ESCALATED = "ESCALATED"
 
 
@@ -40,7 +40,7 @@ class Severity(str, Enum):
 
 
 class RootCauseCategory(str, Enum):
-    SECURITY = "SECURITY"            # default for a SOC triage
+    SECURITY = "SECURITY"  # default for a SOC triage
     CREDENTIAL_ABUSE = "CREDENTIAL_ABUSE"
     MALWARE = "MALWARE"
     EXPLOIT = "EXPLOIT"

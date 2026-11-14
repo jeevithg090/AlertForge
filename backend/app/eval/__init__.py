@@ -6,6 +6,7 @@ corpus and reports verdict accuracy, false-positive suppression, severity
 calibration, and MITRE-mapping precision/recall — as a CI-gateable regression
 floor so a prompt/model change can't silently degrade the SOC's judgment.
 """
+
 from app.eval.corpus import CORPUS, EvalCase
 from app.eval.harness import Metrics, Prediction, classify_heuristic, run, score
 

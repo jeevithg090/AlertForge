@@ -17,6 +17,7 @@ things they get wrong, so this wrapper adds:
 - streaming that surfaces ``reasoning_content`` (reasoning models) separately
 - a graceful mock fallback when no API key is set (zero-key demo runs)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -85,7 +86,9 @@ async def _with_retry(fn, *args, **kwargs):
                 raise
             delay = min(max_delay, base_delay * (2 ** (attempt - 1)))
             delay = random.uniform(0, delay)
-            logger.warning("llm call attempt %d failed (%s); retrying in %.2fs", attempt, exc, delay)
+            logger.warning(
+                "llm call attempt %d failed (%s); retrying in %.2fs", attempt, exc, delay
+            )
             await asyncio.sleep(delay)
 
 
@@ -479,27 +482,42 @@ class LLMClient:
 
     # ----- mock fallback (zero-key demo) -----
 
-    async def _mock_complete(self, model: str, messages: list[dict], thinking: bool) -> dict[str, Any]:
+    async def _mock_complete(
+        self, model: str, messages: list[dict], thinking: bool
+    ) -> dict[str, Any]:
         await asyncio.sleep(0.15)
         last = messages[-1]["content"] if messages else ""
         reasoning = (
             "Analyzing the security finding. Assessing whether this is a true positive. "
             "The affected asset is production-facing, so blast radius could be high. "
             "Checking entity overlap and severity signals to justify the verdict."
-            if thinking else None
+            if thinking
+            else None
         )
-        content = json.dumps({"note": "mock-response", "echo": last[:200], "model": model}, indent=2)
+        content = json.dumps(
+            {"note": "mock-response", "echo": last[:200], "model": model}, indent=2
+        )
         return {
             "content": content,
             "tool_calls": [],
             "reasoning": reasoning,
-            "usage": {"model": model, "input_tokens": len(last) // 4, "output_tokens": 40, "thinking_tokens": 80 if thinking else 0},
+            "usage": {
+                "model": model,
+                "input_tokens": len(last) // 4,
+                "output_tokens": 40,
+                "thinking_tokens": 80 if thinking else 0,
+            },
             "model": model,
         }
 
     async def _mock_stream(self, model: str, messages: list[dict], thinking: bool):
         if thinking:
-            for w in ["Let", "me", "analyze", "this", "finding", "carefully."] + ["The", "signal", "is", "elevated;"]:
+            for w in ["Let", "me", "analyze", "this", "finding", "carefully."] + [
+                "The",
+                "signal",
+                "is",
+                "elevated;",
+            ]:
                 await asyncio.sleep(0.03)
                 yield {"kind": "thinking", "content": w + " "}
         for w in ("Mock", "streaming", "response", "from", model):

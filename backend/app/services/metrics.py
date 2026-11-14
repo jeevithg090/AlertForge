@@ -3,6 +3,7 @@
 All metric creation uses try/except to handle duplicate registration
 on module re-import in tests.
 """
+
 from __future__ import annotations
 
 import logging
@@ -22,26 +23,59 @@ def _metric(name: str, klass, **kwargs):
 
 # --- Counters ---
 
-sf_alerts_ingested_total = _metric("sf_alerts_ingested_total", Counter, documentation="Total alerts ingested", labelnames=("source",))
-sf_alerts_correlated_total = _metric("sf_alerts_correlated_total", Counter, documentation="Alerts folded into existing incidents", labelnames=("reason_kind",))
-sf_incidents_by_verdict_total = _metric("sf_incidents_by_verdict_total", Counter, documentation="Incidents by triage verdict", labelnames=("verdict",))
-sf_actions_total = _metric("sf_actions_total", Counter, documentation="Actions by type and status", labelnames=("action_type", "status"))
-sf_llm_tokens_total = _metric("sf_llm_tokens_total", Counter, documentation="LLM tokens by model and kind", labelnames=("model", "kind"))
+sf_alerts_ingested_total = _metric(
+    "sf_alerts_ingested_total",
+    Counter,
+    documentation="Total alerts ingested",
+    labelnames=("source",),
+)
+sf_alerts_correlated_total = _metric(
+    "sf_alerts_correlated_total",
+    Counter,
+    documentation="Alerts folded into existing incidents",
+    labelnames=("reason_kind",),
+)
+sf_incidents_by_verdict_total = _metric(
+    "sf_incidents_by_verdict_total",
+    Counter,
+    documentation="Incidents by triage verdict",
+    labelnames=("verdict",),
+)
+sf_actions_total = _metric(
+    "sf_actions_total",
+    Counter,
+    documentation="Actions by type and status",
+    labelnames=("action_type", "status"),
+)
+sf_llm_tokens_total = _metric(
+    "sf_llm_tokens_total",
+    Counter,
+    documentation="LLM tokens by model and kind",
+    labelnames=("model", "kind"),
+)
 
 # --- Histograms ---
 
 sf_stage_seconds = _metric(
-    "sf_stage_seconds", Histogram, documentation="Pipeline stage latency in seconds",
-    labelnames=("stage",), buckets=(0.5, 1, 2, 5, 10, 30, 60, 120, 300),
+    "sf_stage_seconds",
+    Histogram,
+    documentation="Pipeline stage latency in seconds",
+    labelnames=("stage",),
+    buckets=(0.5, 1, 2, 5, 10, 30, 60, 120, 300),
 )
 sf_llm_latency_seconds = _metric(
-    "sf_llm_latency_seconds", Histogram, documentation="LLM request latency by model",
-    labelnames=("model",), buckets=(0.5, 1, 2, 5, 10, 30, 60, 120, 300),
+    "sf_llm_latency_seconds",
+    Histogram,
+    documentation="LLM request latency by model",
+    labelnames=("model",),
+    buckets=(0.5, 1, 2, 5, 10, 30, 60, 120, 300),
 )
 
 # --- Gauges ---
 
-sf_approval_queue_size = _metric("sf_approval_queue_size", Gauge, documentation="Number of steps awaiting approval")
+sf_approval_queue_size = _metric(
+    "sf_approval_queue_size", Gauge, documentation="Number of steps awaiting approval"
+)
 
 
 # --- Helper functions ---

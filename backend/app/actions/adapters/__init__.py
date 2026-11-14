@@ -1,5 +1,6 @@
 """Action adapters. Mock/simulation adapters ship by default; real adapters
 (cloud SG revoke, Okta suspend, EDR isolate) implement the same contract."""
+
 from app.actions.adapters.mock import default_adapters as _mock_adapters
 
 

@@ -11,6 +11,7 @@ When no LLM key is configured (zero-key demo mode), falls back to a
 deterministic heuristic investigation that drives the *same* tool registry so
 the dashboard still gets realistic `tool.called` / `tool.result` events.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -128,7 +129,9 @@ class InvestigationAgent(AgentPersona):
                         "affected_hosts": incident.get("affected_hosts", []),
                         "alert_message": incident.get("alert_message", ""),
                         "triage": triage,
-                        "first_seen_at": incident.get("created_at", datetime.now(timezone.utc).isoformat()),
+                        "first_seen_at": incident.get(
+                            "created_at", datetime.now(timezone.utc).isoformat()
+                        ),
                     },
                     default=str,
                 ),
@@ -141,8 +144,13 @@ class InvestigationAgent(AgentPersona):
             incident_id,
             make_event("investigation.tools_selected", incident_id, tools=tool_names),
         )
-        logger.info("investigation %s exposing %d/%d tools: %s",
-                    incident_id, len(tool_names), len(get_tool_schemas()), tool_names)
+        logger.info(
+            "investigation %s exposing %d/%d tools: %s",
+            incident_id,
+            len(tool_names),
+            len(get_tool_schemas()),
+            tool_names,
+        )
         tools_used: list[str] = []
         all_evidence: list[dict] = []
         all_iocs: list[dict] = []
@@ -161,7 +169,12 @@ class InvestigationAgent(AgentPersona):
             # If the model already wants to finalize (no tool calls), parse + return.
             if not tool_calls:
                 finding = self._parse_finding(
-                    content, incident_id, time.time() - start_time, tools_used, all_evidence, all_iocs
+                    content,
+                    incident_id,
+                    time.time() - start_time,
+                    tools_used,
+                    all_evidence,
+                    all_iocs,
                 )
                 await self._finish(incident_id, finding)
                 return finding
@@ -221,9 +234,7 @@ class InvestigationAgent(AgentPersona):
                 )
 
             # 4) Push the assistant tool_call message + tool results back into the thread.
-            messages.append(
-                {"role": "assistant", "content": content, "tool_calls": tool_calls}
-            )
+            messages.append({"role": "assistant", "content": content, "tool_calls": tool_calls})
             messages.extend(tool_results_for_model)
 
         # Max rounds hit — ask for a final finding with no tools available.
@@ -234,7 +245,12 @@ class InvestigationAgent(AgentPersona):
             incident_id=incident_id,
         )
         finding = self._parse_finding(
-            final_resp["content"], incident_id, time.time() - start_time, tools_used, all_evidence, all_iocs
+            final_resp["content"],
+            incident_id,
+            time.time() - start_time,
+            tools_used,
+            all_evidence,
+            all_iocs,
         )
         await self._finish(incident_id, finding)
         return finding
@@ -337,19 +353,30 @@ class InvestigationAgent(AgentPersona):
             vt = res.get("virustotal") or {}
             ab = res.get("abuseipdb") or {}
             verdict = payload.get("verdict") or (
-                "MALICIOUS" if (vt.get("malicious", 0) > 5 or ab.get("abuse_confidence_score", 0) > 60) else "UNKNOWN"
+                "MALICIOUS"
+                if (vt.get("malicious", 0) > 5 or ab.get("abuse_confidence_score", 0) > 60)
+                else "UNKNOWN"
             )
             if ip:
                 iocs.append({"type": "ip", "value": ip, "verdict": verdict, "source": tool})
-            detail_bits.append(f"VT malicious={vt.get('malicious', '?')}, AbuseIPDB score={ab.get('abuse_confidence_score', '?')}")
+            detail_bits.append(
+                f"VT malicious={vt.get('malicious', '?')}, AbuseIPDB score={ab.get('abuse_confidence_score', '?')}"
+            )
 
         # CVE search
         elif tool == "search_cve_database":
             for cve in payload.get("cves", []) or []:
                 iocs.append(
-                    {"type": "cve", "value": cve.get("cve_id", ""), "verdict": cve.get("severity", "UNKNOWN"), "source": tool}
+                    {
+                        "type": "cve",
+                        "value": cve.get("cve_id", ""),
+                        "verdict": cve.get("severity", "UNKNOWN"),
+                        "source": tool,
+                    }
                 )
-            detail_bits.append(f"{len(payload.get('cves', []) or [])} CVE(s) found for {args.get('product','')}")
+            detail_bits.append(
+                f"{len(payload.get('cves', []) or [])} CVE(s) found for {args.get('product', '')}"
+            )
 
         # SIEM auth logs / Elasticsearch / EDR
         elif tool in ("query_siem_auth_logs", "query_elasticsearch", "query_edr_endpoint"):
@@ -360,10 +387,14 @@ class InvestigationAgent(AgentPersona):
                     msg = h.get("message") or h.get("raw") or json.dumps(h, default=str)[:160]
                     src_ip = h.get("source_ip") or h.get("src_ip")
                     if src_ip:
-                        iocs.append({"type": "ip", "value": src_ip, "verdict": "SUSPICIOUS", "source": tool})
+                        iocs.append(
+                            {"type": "ip", "value": src_ip, "verdict": "SUSPICIOUS", "source": tool}
+                        )
                     user = h.get("user") or h.get("username")
                     if user:
-                        iocs.append({"type": "user", "value": user, "verdict": "SUSPICIOUS", "source": tool})
+                        iocs.append(
+                            {"type": "user", "value": user, "verdict": "SUSPICIOUS", "source": tool}
+                        )
                     detail_bits.append(f"[{h.get('@timestamp') or h.get('timestamp') or ''}] {msg}")
 
         # Identity enrichment
@@ -372,9 +403,16 @@ class InvestigationAgent(AgentPersona):
             if user:
                 priv = bool(payload.get("is_privileged"))
                 iocs.append(
-                    {"type": "user", "value": user, "verdict": "SUSPICIOUS" if priv else "UNKNOWN", "source": tool}
+                    {
+                        "type": "user",
+                        "value": user,
+                        "verdict": "SUSPICIOUS" if priv else "UNKNOWN",
+                        "source": tool,
+                    }
                 )
-            detail_bits.append(f"privileged={payload.get('is_privileged')}, mfa_enabled={payload.get('mfa_enabled')}")
+            detail_bits.append(
+                f"privileged={payload.get('is_privileged')}, mfa_enabled={payload.get('mfa_enabled')}"
+            )
 
         # Runbook search
         elif tool == "search_runbook":
@@ -388,7 +426,12 @@ class InvestigationAgent(AgentPersona):
                     }
                 )
 
-        evidence.append({"source": tool, "detail": " | ".join(detail_bits)[:400] or json.dumps(payload, default=str)[:400]})
+        evidence.append(
+            {
+                "source": tool,
+                "detail": " | ".join(detail_bits)[:400] or json.dumps(payload, default=str)[:400],
+            }
+        )
 
     # ---------- heuristic investigation (zero-key demo mode) ----------
 
@@ -438,7 +481,9 @@ class InvestigationAgent(AgentPersona):
         plan.append(("search_runbook", {"query": rb_query}))
 
         if not plan:
-            plan.append(("search_runbook", {"query": incident.get("alert_message", "incident")[:120]}))
+            plan.append(
+                ("search_runbook", {"query": incident.get("alert_message", "incident")[:120]})
+            )
 
         tools_used: list[str] = []
         all_evidence: list[dict] = []
@@ -446,7 +491,14 @@ class InvestigationAgent(AgentPersona):
         for round_num, (name, args) in enumerate(plan, start=1):
             await publish_event(
                 incident_id,
-                make_event("tool.called", incident_id, tool=name, args=args, round=round_num, persona=self.PERSONA),
+                make_event(
+                    "tool.called",
+                    incident_id,
+                    tool=name,
+                    args=args,
+                    round=round_num,
+                    persona=self.PERSONA,
+                ),
             )
             if name not in tools_used:
                 tools_used.append(name)
@@ -457,7 +509,14 @@ class InvestigationAgent(AgentPersona):
             self._collect_iocs_evidence(name, args, payload, all_iocs, all_evidence)
             await publish_event(
                 incident_id,
-                make_event("tool.result", incident_id, tool=name, args=args, result=payload, round=round_num),
+                make_event(
+                    "tool.result",
+                    incident_id,
+                    tool=name,
+                    args=args,
+                    result=payload,
+                    round=round_num,
+                ),
             )
 
         # Synthesize a deterministic finding
@@ -478,7 +537,10 @@ class InvestigationAgent(AgentPersona):
             tools_used=tools_used,
             iocs=ioc_objs,
             timeline=[
-                TimelineEvent(timestamp=datetime.now(timezone.utc), event=f"ran {len(tools_used)} investigatory tools")
+                TimelineEvent(
+                    timestamp=datetime.now(timezone.utc),
+                    event=f"ran {len(tools_used)} investigatory tools",
+                )
             ],
             blast_radius_assessment=(
                 "Heuristic assessment — correlate IOCs against deployment topology to bound attacker reach."
@@ -491,7 +553,10 @@ class InvestigationAgent(AgentPersona):
 _IP_RE = re.compile(r"\b(\d{1,3}\.){3}\d{1,3}\b")
 _USER_RE = re.compile(r"\buser[=:\s]+([A-Za-z0-9._@\-]+)\b", re.IGNORECASE)
 # "nginx 1.21", "openssl 3.0.7", "postgres 14.2"
-_TECH_RE = re.compile(r"\b(nginx|openssl|postgres|postgresql|java|jvm|apache|redis|mongo|kafka)[\s-]*v?(\d+(?:\.\d+){0,2})?", re.IGNORECASE)
+_TECH_RE = re.compile(
+    r"\b(nginx|openssl|postgres|postgresql|java|jvm|apache|redis|mongo|kafka)[\s-]*v?(\d+(?:\.\d+){0,2})?",
+    re.IGNORECASE,
+)
 
 
 def _extract_ips(text: str) -> list[str]:
@@ -529,14 +594,14 @@ def _narrative_for(tool_name: str, tc: dict) -> str:
     except Exception:
         args = {}
     narratives = {
-        "query_elasticsearch": f"Scanning logs for \"{args.get('query_string', '')}\"...",
-        "query_siem_auth_logs": f"Querying SIEM auth logs: \"{args.get('query', '')}\"...",
+        "query_elasticsearch": f'Scanning logs for "{args.get("query_string", "")}"...',
+        "query_siem_auth_logs": f'Querying SIEM auth logs: "{args.get("query", "")}"...',
         "query_prometheus_metrics": f"Querying metrics: {args.get('promql', '')[:60]}...",
         "lookup_ip_reputation": f"Checking threat intel for {args.get('ip_address', '')}...",
         "search_cve_database": f"Searching CVEs for {args.get('product', '')}...",
         "enrich_user_identity": f"Enriching identity: {args.get('username', '')}...",
         "query_edr_endpoint": f"Querying EDR for host {args.get('hostname', '')}...",
-        "search_runbook": f"Searching runbook KB for \"{args.get('query', '')[:40]}\"...",
+        "search_runbook": f'Searching runbook KB for "{args.get("query", "")[:40]}"...',
         "send_slack_message": "Sending Slack notification...",
         "create_pagerduty_incident": "Creating PagerDuty incident...",
         "check_ssl_certificate": f"Checking SSL cert for {args.get('domain', '')}...",

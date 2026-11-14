@@ -4,6 +4,7 @@
 the deterministic heuristic (so the gate runs in CI with zero API key); pass
 ``--llm`` to evaluate the real model instead.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -22,7 +23,7 @@ _SUPPRESS = {"FALSE_POSITIVE", "BENIGN_ANOMALY"}
 # beat them comfortably. Tightening these over time ratchets quality upward.
 DEFAULT_GATE = {
     "verdict_accuracy": 0.70,
-    "suppression_recall": 0.80,   # of things that should be dismissed, how many we didn't escalate
+    "suppression_recall": 0.80,  # of things that should be dismissed, how many we didn't escalate
     "severity_within_one": 0.75,
     "technique_recall": 0.70,
 }
@@ -117,12 +118,19 @@ def score(cases: list[EvalCase], preds: list[Prediction]) -> Metrics:
 
 # ---- classifiers ---- #
 
+
 def classify_heuristic(case: EvalCase) -> Prediction:
     from app.agents.triage_agent import _heuristic_triage
 
-    signal = {"alert_message": case.raw_text, "raw_input": case.raw_text, "source": case.source_hint}
+    signal = {
+        "alert_message": case.raw_text,
+        "raw_input": case.raw_text,
+        "source": case.source_hint,
+    }
     r = _heuristic_triage(signal, "eval")
-    return Prediction(r.verdict.value, r.severity.value, [t.technique_id for t in r.attack_techniques])
+    return Prediction(
+        r.verdict.value, r.severity.value, [t.technique_id for t in r.attack_techniques]
+    )
 
 
 async def classify_llm(case: EvalCase) -> Prediction:
@@ -137,7 +145,10 @@ async def classify_llm(case: EvalCase) -> Prediction:
             model=__import__("app.config", fromlist=["settings"]).settings.llm_model_smart,
             messages=[
                 {"role": "system", "content": TRIAGE_SYSTEM},
-                {"role": "user", "content": case.raw_text + "\n\nRespond with the TriageResult JSON only."},
+                {
+                    "role": "user",
+                    "content": case.raw_text + "\n\nRespond with the TriageResult JSON only.",
+                },
             ],
             temperature=0.0,
         )
@@ -145,7 +156,11 @@ async def classify_llm(case: EvalCase) -> Prediction:
         return Prediction(
             data.get("verdict", "NEEDS_HUMAN"),
             data.get("severity", "P3_MEDIUM"),
-            [t.get("technique_id", "") for t in (data.get("attack_techniques") or []) if t.get("technique_id")],
+            [
+                t.get("technique_id", "")
+                for t in (data.get("attack_techniques") or [])
+                if t.get("technique_id")
+            ],
         )
     except Exception:
         return classify_heuristic(case)
@@ -179,7 +194,11 @@ def _report(m: Metrics, label: str) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the SentinelForge triage evaluation gate")
-    parser.add_argument("--llm", action="store_true", help="Evaluate the real model instead of the heuristic baseline")
+    parser.add_argument(
+        "--llm",
+        action="store_true",
+        help="Evaluate the real model instead of the heuristic baseline",
+    )
     args = parser.parse_args()
 
     classifier = classify_llm if args.llm else classify_heuristic

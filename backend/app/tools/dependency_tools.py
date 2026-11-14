@@ -1,4 +1,5 @@
 """Service dependency graph tool."""
+
 from __future__ import annotations
 
 from app.tools.registry import tool
@@ -11,7 +12,11 @@ from app.tools.registry import tool
         "type": "object",
         "properties": {
             "service": {"type": "string", "description": "Service name to query"},
-            "direction": {"type": "string", "enum": ["upstream", "downstream", "both"], "default": "both"},
+            "direction": {
+                "type": "string",
+                "enum": ["upstream", "downstream", "both"],
+                "default": "both",
+            },
         },
         "required": ["service"],
     },
@@ -24,7 +29,13 @@ def _mock_deps(service, direction):
     graph = {
         "checkout-service": {
             "upstream": ["api-gateway", "web-frontend", "mobile-app"],
-            "downstream": ["payment-gateway", "inventory-service", "user-auth", "postgres-primary", "redis-cache"],
+            "downstream": [
+                "payment-gateway",
+                "inventory-service",
+                "user-auth",
+                "postgres-primary",
+                "redis-cache",
+            ],
         },
         "payment-gateway": {
             "upstream": ["checkout-service", "subscription-service"],

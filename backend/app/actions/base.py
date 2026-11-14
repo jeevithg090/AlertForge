@@ -5,6 +5,7 @@ the executor can treat firewalls, IdPs, and EDRs uniformly — and so every
 mutating action has a *tested, mandatory rollback path*. Real adapters (a cloud
 security-group revoke, an Okta suspend) drop in behind this interface unchanged.
 """
+
 from __future__ import annotations
 
 import abc

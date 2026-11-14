@@ -122,8 +122,17 @@ IOC_MARKERS: dict[str, str] = {
 }
 
 REQUIRED_FIELDS = [
-    "title", "id", "status", "description", "author", "date",
-    "tags", "logsource", "detection", "falsepositives", "level",
+    "title",
+    "id",
+    "status",
+    "description",
+    "author",
+    "date",
+    "tags",
+    "logsource",
+    "detection",
+    "falsepositives",
+    "level",
 ]
 
 
@@ -132,11 +141,14 @@ def _normalize_technique_id(tid: str) -> str:
 
 
 def _ioc_values(iocs: list[dict], ioc_type: str) -> list[str]:
-    return [i.get("value", "") for i in (iocs or []) if i.get("type") == ioc_type and i.get("value")]
+    return [
+        i.get("value", "") for i in (iocs or []) if i.get("type") == ioc_type and i.get("value")
+    ]
 
 
 def _inject_iocs(template: dict, iocs: list[dict]) -> dict:
     import copy
+
     detection = copy.deepcopy(template.get("detection", {}))
     ips = _ioc_values(iocs, "ip")
     users = _ioc_values(iocs, "user")
@@ -207,10 +219,16 @@ def build_sigma_rule(incident: dict) -> dict:
         tech_id = selected_tech["technique_id"] if isinstance(selected_tech, dict) else "T1078"
         base_id = _normalize_technique_id(tech_id)
         template = dict(SIGMA_TEMPLATES.get(base_id, GENERIC_TEMPLATE))
-        tech_name = selected_tech.get("name", "Suspicious Activity") if isinstance(selected_tech, dict) else "Suspicious Activity"
+        tech_name = (
+            selected_tech.get("name", "Suspicious Activity")
+            if isinstance(selected_tech, dict)
+            else "Suspicious Activity"
+        )
         tech_tactic = selected_tech.get("tactic", "") if isinstance(selected_tech, dict) else ""
 
-    tactic_name = TACTIC_MAP.get(base_id, tech_tactic.lower().replace(" ", "_") if tech_tactic else "unknown")
+    tactic_name = TACTIC_MAP.get(
+        base_id, tech_tactic.lower().replace(" ", "_") if tech_tactic else "unknown"
+    )
 
     detection = _inject_iocs(template, iocs)
     logsource = template.get("logsource", GENERIC_TEMPLATE["logsource"])

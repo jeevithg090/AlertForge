@@ -3,6 +3,7 @@
 The war room personas (Addendum A) are central labels rendered in the UI:
 CMDR / ANLST / STRAT / OPS / CHRON.
 """
+
 from __future__ import annotations
 
 import logging

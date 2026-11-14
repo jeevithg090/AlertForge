@@ -1,4 +1,5 @@
 """Kubernetes pod status tool."""
+
 from __future__ import annotations
 
 import random
@@ -19,7 +20,9 @@ from app.tools.registry import tool
         "required": ["namespace"],
     },
 )
-async def get_kubernetes_pod_status(namespace: str, deployment: str = "", include_events: bool = True) -> dict:
+async def get_kubernetes_pod_status(
+    namespace: str, deployment: str = "", include_events: bool = True
+) -> dict:
     return _mock_pods(namespace, deployment, include_events)
 
 
@@ -28,10 +31,14 @@ def _mock_pods(namespace, deployment, include_events):
     pods = []
     for i in range(3):
         restarts = random.randint(0, 12) if i == 0 else random.randint(0, 2)
-        status = "OOMKilled" if restarts > 5 else ("CrashLoopBackOff" if restarts > 3 else "Running")
-        mem_mb = random.randint(12000, 16000) if status == "OOMKilled" else random.randint(2000, 4000)
+        status = (
+            "OOMKilled" if restarts > 5 else ("CrashLoopBackOff" if restarts > 3 else "Running")
+        )
+        mem_mb = (
+            random.randint(12000, 16000) if status == "OOMKilled" else random.randint(2000, 4000)
+        )
         pod = {
-            "name": f"{dep}-{random.randint(10000,99999)}-{random.randint(10000,99999)}",
+            "name": f"{dep}-{random.randint(10000, 99999)}-{random.randint(10000, 99999)}",
             "namespace": namespace,
             "status": status,
             "restarts": restarts,
@@ -43,8 +50,18 @@ def _mock_pods(namespace, deployment, include_events):
         }
         if include_events and status != "Running":
             pod["events"] = [
-                {"type": "Warning", "reason": "OOMKilling", "message": f"Container killed due to OOM (memory limit: 16Gi, usage: {mem_mb}Mi)", "count": restarts},
-                {"type": "Warning", "reason": "BackOff", "message": "Back-off restarting failed container", "count": restarts},
+                {
+                    "type": "Warning",
+                    "reason": "OOMKilling",
+                    "message": f"Container killed due to OOM (memory limit: 16Gi, usage: {mem_mb}Mi)",
+                    "count": restarts,
+                },
+                {
+                    "type": "Warning",
+                    "reason": "BackOff",
+                    "message": "Back-off restarting failed container",
+                    "count": restarts,
+                },
             ]
         pods.append(pod)
     return {"namespace": namespace, "deployment": dep, "pods": pods, "total": len(pods)}

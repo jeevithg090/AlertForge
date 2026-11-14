@@ -18,6 +18,7 @@ from app.services.auth import (  # noqa: E402
 
 # ---------- password hashing ----------
 
+
 def test_hash_verify_roundtrip():
     pw = "my-secret-password"
     stored = hash_password(pw)
@@ -45,6 +46,7 @@ def test_invalid_format_returns_false():
 
 # ---------- JWT ----------
 
+
 def test_token_roundtrip():
     operator = {"email": "alice@test.local", "role": "approver", "display_name": "Alice"}
     token = create_token(operator)
@@ -57,6 +59,7 @@ def test_token_roundtrip():
 def test_expired_token_raises():
     old = time.time() - 3600
     import jwt
+
     token = jwt.encode(
         {"sub": "x@x", "role": "viewer", "exp": old, "iat": old},
         "dev-secret-change-me",
@@ -77,6 +80,7 @@ def test_modified_token_raises():
 
 
 # ---------- role_allowed pure function ----------
+
 
 def test_role_allowed_admin_always():
     assert role_allowed("admin", ("viewer",))

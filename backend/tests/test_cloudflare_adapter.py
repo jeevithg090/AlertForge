@@ -44,6 +44,7 @@ def _monkeypatch_httpx(monkeypatch, get_resp=None, post_resp=None, delete_resp=N
         def raise_for_status(self):
             if self.status_code >= 400:
                 from httpx import HTTPStatusError
+
                 raise HTTPStatusError("error", request=None, response=self)
 
     async def fake_get(self, url, **kwargs):
@@ -56,6 +57,7 @@ def _monkeypatch_httpx(monkeypatch, get_resp=None, post_resp=None, delete_resp=N
         return delete_resp or FakeResponse(200, {"success": True, "result": {"id": "cf-rule-001"}})
 
     import httpx
+
     monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
     monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
     monkeypatch.setattr(httpx.AsyncClient, "delete", fake_delete)
@@ -87,7 +89,16 @@ async def test_execute_creates_rule(monkeypatch, adapter, req):
     _monkeypatch_httpx(
         monkeypatch,
         get_resp=None,  # no existing rules
-        post_resp=type('R', (), {'status_code': 200, 'ok': True, 'text': '', 'json': lambda self: {"success": True, "result": {"id": "cf-rule-001"}}})(),
+        post_resp=type(
+            "R",
+            (),
+            {
+                "status_code": 200,
+                "ok": True,
+                "text": "",
+                "json": lambda self: {"success": True, "result": {"id": "cf-rule-001"}},
+            },
+        )(),
     )
     result = await adapter.execute(req)
     assert result["rule_id"] == "cf-rule-001"
@@ -99,7 +110,16 @@ async def test_execute_creates_rule(monkeypatch, adapter, req):
 async def test_execute_idempotent_when_rule_exists(monkeypatch, adapter, req):
     _monkeypatch_httpx(
         monkeypatch,
-        get_resp=type('R', (), {'status_code': 200, 'ok': True, 'text': '', 'json': lambda self: {"success": True, "result": [{"id": "cf-rule-001"}]}})(),
+        get_resp=type(
+            "R",
+            (),
+            {
+                "status_code": 200,
+                "ok": True,
+                "text": "",
+                "json": lambda self: {"success": True, "result": [{"id": "cf-rule-001"}]},
+            },
+        )(),
     )
     result = await adapter.execute(req)
     assert result["rule_id"] == "cf-rule-001"
@@ -113,7 +133,16 @@ async def test_execute_idempotent_when_rule_exists(monkeypatch, adapter, req):
 async def test_verify_true(monkeypatch, adapter, req):
     _monkeypatch_httpx(
         monkeypatch,
-        get_resp=type('R', (), {'status_code': 200, 'ok': True, 'text': '', 'json': lambda self: {"success": True, "result": [{"id": "cf-rule-001"}]}})(),
+        get_resp=type(
+            "R",
+            (),
+            {
+                "status_code": 200,
+                "ok": True,
+                "text": "",
+                "json": lambda self: {"success": True, "result": [{"id": "cf-rule-001"}]},
+            },
+        )(),
     )
     assert await adapter.verify(req, {"rule_id": "cf-rule-001"}) is True
 
@@ -122,7 +151,16 @@ async def test_verify_true(monkeypatch, adapter, req):
 async def test_verify_false(monkeypatch, adapter, req):
     _monkeypatch_httpx(
         monkeypatch,
-        get_resp=type('R', (), {'status_code': 200, 'ok': True, 'text': '', 'json': lambda self: {"success": True, "result": []}})(),
+        get_resp=type(
+            "R",
+            (),
+            {
+                "status_code": 200,
+                "ok": True,
+                "text": "",
+                "json": lambda self: {"success": True, "result": []},
+            },
+        )(),
     )
     assert await adapter.verify(req, {"rule_id": "cf-rule-001"}) is False
 
@@ -134,7 +172,16 @@ async def test_verify_false(monkeypatch, adapter, req):
 async def test_rollback_deletes_by_rule_id(monkeypatch, adapter, req):
     _monkeypatch_httpx(
         monkeypatch,
-        delete_resp=type('R', (), {'status_code': 200, 'ok': True, 'text': '', 'json': lambda self: {"success": True, "result": {"id": "cf-rule-001"}}})(),
+        delete_resp=type(
+            "R",
+            (),
+            {
+                "status_code": 200,
+                "ok": True,
+                "text": "",
+                "json": lambda self: {"success": True, "result": {"id": "cf-rule-001"}},
+            },
+        )(),
     )
     assert await adapter.rollback(req, {"rule_id": "cf-rule-001"}) is True
 
@@ -143,8 +190,26 @@ async def test_rollback_deletes_by_rule_id(monkeypatch, adapter, req):
 async def test_rollback_looks_up_by_ip_when_no_rule_id(monkeypatch, adapter, req):
     _monkeypatch_httpx(
         monkeypatch,
-        get_resp=type('R', (), {'status_code': 200, 'ok': True, 'text': '', 'json': lambda self: {"success": True, "result": [{"id": "cf-rule-002"}]}})(),
-        delete_resp=type('R', (), {'status_code': 200, 'ok': True, 'text': '', 'json': lambda self: {"success": True, "result": {"id": "cf-rule-002"}}})(),
+        get_resp=type(
+            "R",
+            (),
+            {
+                "status_code": 200,
+                "ok": True,
+                "text": "",
+                "json": lambda self: {"success": True, "result": [{"id": "cf-rule-002"}]},
+            },
+        )(),
+        delete_resp=type(
+            "R",
+            (),
+            {
+                "status_code": 200,
+                "ok": True,
+                "text": "",
+                "json": lambda self: {"success": True, "result": {"id": "cf-rule-002"}},
+            },
+        )(),
     )
     assert await adapter.rollback(req, {}) is True
 
@@ -155,7 +220,16 @@ async def test_rollback_looks_up_by_ip_when_no_rule_id(monkeypatch, adapter, req
 @pytest.mark.asyncio
 async def test_cloudflare_unsuccessful_response(monkeypatch, adapter, req):
     """When Cloudflare returns success: false, the adapter should surface failure."""
-    err = type('R', (), {'status_code': 400, 'ok': False, 'text': '{"success":false,"errors":[{"message":"rate limit exceeded"}]}', 'json': lambda self: {"success": False, "errors": [{"message": "rate limit exceeded"}]}})()
+    err = type(
+        "R",
+        (),
+        {
+            "status_code": 400,
+            "ok": False,
+            "text": '{"success":false,"errors":[{"message":"rate limit exceeded"}]}',
+            "json": lambda self: {"success": False, "errors": [{"message": "rate limit exceeded"}]},
+        },
+    )()
     _monkeypatch_httpx(
         monkeypatch,
         get_resp=None,

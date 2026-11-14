@@ -7,6 +7,7 @@ If the MCP server is unreachable (e.g. local dev without docker compose), it
 falls back to synthesizing a believable ticket URL in-process so the demo flow
 is never broken.
 """
+
 from __future__ import annotations
 
 import json
@@ -47,17 +48,23 @@ async def create_incident_ticket(
     endpoint = _messages_endpoint()
     payload = {
         "method": "tools/call",
-        "params": {"name": "create_jira_ticket", "arguments": {
-            "summary": summary,
-            "description": description,
-            "priority": priority,
-            "project": project,
-        }},
+        "params": {
+            "name": "create_jira_ticket",
+            "arguments": {
+                "summary": summary,
+                "description": description,
+                "priority": priority,
+                "project": project,
+            },
+        },
     }
     try:
-        async with aiohttp.ClientSession() as session, session.post(
-            endpoint, json=payload, timeout=aiohttp.ClientTimeout(total=timeout_seconds)
-        ) as resp:
+        async with (
+            aiohttp.ClientSession() as session,
+            session.post(
+                endpoint, json=payload, timeout=aiohttp.ClientTimeout(total=timeout_seconds)
+            ) as resp,
+        ):
             if resp.status == 200:
                 body = await resp.json()
                 # MCP fallback wrapper: {"result": {"content": [{"type":"text","text":"..."}]}}

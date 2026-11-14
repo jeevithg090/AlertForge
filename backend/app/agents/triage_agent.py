@@ -16,6 +16,7 @@ BENIGN_ANOMALY / NEEDS_HUMAN), MITRE ATT&CK technique mappings, and blast
 radius. The orchestrator forwards true-positive / benign-only findings to the
 Investigation Agent, dismisses false positives, and escalates NEEDS_HUMAN.
 """
+
 from __future__ import annotations
 
 import json
@@ -102,22 +103,50 @@ TRIAGE_SENTINEL = "===TRIAGE_JSON==="
 # ---- heuristic fallback (zero-key demo) ---------------------------------
 
 KEYWORD_TO_TECHNIQUE = [
-    (("brute force", "brute-force", "failed login", "ssh brute", "failed password"),
-     {"technique_id": "T1110", "name": "Brute Force", "tactic": "Credential Access"}),
-    (("phish", "phishing", "malicious link", "spear phish"),
-     {"technique_id": "T1566", "name": "Phishing", "tactic": "Initial Access"}),
-    (("beacon", "c2 ", "command and control", "dns tunnel", "reverse shell"),
-     {"technique_id": "T1071", "name": "Application Layer Protocol", "tactic": "Command and Control"}),
-    (("exfil", "data theft", "egress anomaly"),
-     {"technique_id": "T1041", "name": "Exfiltration Over C2 Channel", "tactic": "Exfiltration"}),
-    (("ransomware", "encrypted file", "file extension"),
-     {"technique_id": "T1486", "name": "Data Encrypted for Impact", "tactic": "Impact"}),
-    (("powershell", "shell_command", "lolbin", "living off the land"),
-     {"technique_id": "T1059", "name": "Command and Scripting Interpreter", "tactic": "Execution"}),
-    (("sql injection", "sqli", "exploit public"),
-     {"technique_id": "T1190", "name": "Exploit Public-Facing Application", "tactic": "Initial Access"}),
-    (("valid account", "credential abuse", "stolen token"),
-     {"technique_id": "T1078", "name": "Valid Accounts", "tactic": "Initial Access"}),
+    (
+        ("brute force", "brute-force", "failed login", "ssh brute", "failed password"),
+        {"technique_id": "T1110", "name": "Brute Force", "tactic": "Credential Access"},
+    ),
+    (
+        ("phish", "phishing", "malicious link", "spear phish"),
+        {"technique_id": "T1566", "name": "Phishing", "tactic": "Initial Access"},
+    ),
+    (
+        ("beacon", "c2 ", "command and control", "dns tunnel", "reverse shell"),
+        {
+            "technique_id": "T1071",
+            "name": "Application Layer Protocol",
+            "tactic": "Command and Control",
+        },
+    ),
+    (
+        ("exfil", "data theft", "egress anomaly"),
+        {"technique_id": "T1041", "name": "Exfiltration Over C2 Channel", "tactic": "Exfiltration"},
+    ),
+    (
+        ("ransomware", "encrypted file", "file extension"),
+        {"technique_id": "T1486", "name": "Data Encrypted for Impact", "tactic": "Impact"},
+    ),
+    (
+        ("powershell", "shell_command", "lolbin", "living off the land"),
+        {
+            "technique_id": "T1059",
+            "name": "Command and Scripting Interpreter",
+            "tactic": "Execution",
+        },
+    ),
+    (
+        ("sql injection", "sqli", "exploit public"),
+        {
+            "technique_id": "T1190",
+            "name": "Exploit Public-Facing Application",
+            "tactic": "Initial Access",
+        },
+    ),
+    (
+        ("valid account", "credential abuse", "stolen token"),
+        {"technique_id": "T1078", "name": "Valid Accounts", "tactic": "Initial Access"},
+    ),
 ]
 
 
@@ -131,17 +160,35 @@ def _heuristic_techniques(text: str) -> list[AttackTechnique]:
 
 # Markers that flip a finding away from a naive "everything is a true positive".
 _FALSE_POSITIVE_MARKERS = (
-    "authorized", "penetration test", "pen test", "pentest", "red team",
-    "scheduled scan", "approved change", "known good", "false positive",
-    "test alert", "expected behavior", "sanctioned",
+    "authorized",
+    "penetration test",
+    "pen test",
+    "pentest",
+    "red team",
+    "scheduled scan",
+    "approved change",
+    "known good",
+    "false positive",
+    "test alert",
+    "expected behavior",
+    "sanctioned",
 )
 _BENIGN_MARKERS = (
-    "certificate renewed", "backup completed", "health check", "auto-resolved",
-    "resolved automatically", "returned to normal", "within baseline",
+    "certificate renewed",
+    "backup completed",
+    "health check",
+    "auto-resolved",
+    "resolved automatically",
+    "returned to normal",
+    "within baseline",
 )
 _NEEDS_HUMAN_MARKERS = (
-    "unclear", "ambiguous", "needs manual review", "cannot determine",
-    "insufficient context", "please advise",
+    "unclear",
+    "ambiguous",
+    "needs manual review",
+    "cannot determine",
+    "insufficient context",
+    "please advise",
 )
 
 
@@ -155,9 +202,13 @@ def _heuristic_triage(signal: dict[str, Any], incident_id: str) -> TriageResult:
         verdict, severity, techniques = Verdict.BENIGN_ANOMALY, Severity.P4_LOW, []
     elif any(k in text for k in _NEEDS_HUMAN_MARKERS):
         verdict, severity = Verdict.NEEDS_HUMAN, Severity.P3_MEDIUM
-    elif any(k in text for k in ("brute force", "failed login", "ransomware", "c2 ", "exfil", "phish")):
+    elif any(
+        k in text for k in ("brute force", "failed login", "ransomware", "c2 ", "exfil", "phish")
+    ):
         verdict = Verdict.TRUE_POSITIVE
-        severity = Severity.P1_CRITICAL if "ransomware" in text or "c2 " in text else Severity.P2_HIGH
+        severity = (
+            Severity.P1_CRITICAL if "ransomware" in text or "c2 " in text else Severity.P2_HIGH
+        )
     elif "beacon" in text:
         verdict = Verdict.TRUE_POSITIVE
         severity = Severity.P2_HIGH
@@ -170,7 +221,9 @@ def _heuristic_triage(signal: dict[str, Any], incident_id: str) -> TriageResult:
         verdict=verdict,
         is_false_positive=(verdict == Verdict.FALSE_POSITIVE),
         root_cause_category=RootCauseCategory.SECURITY,
-        affected_services=[signal.get("affected_service", "unknown")] if signal.get("affected_service") else [],
+        affected_services=[signal.get("affected_service", "unknown")]
+        if signal.get("affected_service")
+        else [],
         blast_radius=BlastRadius.SERVICE,
         attack_techniques=techniques,
         investigation_priority=[
@@ -210,8 +263,8 @@ class TriageAgent(AgentPersona):
 
         # Stream reasoning prose (live to the dashboard), then a sentinel, then
         # the JSON verdict. Works on OSS models with no reasoning_content stream.
-        reason_buf = ""       # reasoning text accumulated so far (pre-sentinel)
-        reason_emitted = 0    # chars of reason_buf already streamed to the UI
+        reason_buf = ""  # reasoning text accumulated so far (pre-sentinel)
+        reason_emitted = 0  # chars of reason_buf already streamed to the UI
         json_buf: list[str] = []
         in_json = False
 
@@ -244,7 +297,7 @@ class TriageAgent(AgentPersona):
                     await _emit_reasoning(reason_buf[reason_emitted:idx])
                     reason_emitted = idx
                     in_json = True
-                    json_buf.append(reason_buf[idx + len(TRIAGE_SENTINEL):])
+                    json_buf.append(reason_buf[idx + len(TRIAGE_SENTINEL) :])
                 else:
                     # Stream reasoning but hold back a possible partial sentinel.
                     safe = max(reason_emitted, len(reason_buf) - len(TRIAGE_SENTINEL))
@@ -277,7 +330,7 @@ class TriageAgent(AgentPersona):
         if verdict_value == Verdict.TRUE_POSITIVE.value:
             data["is_false_positive"] = False
         elif verdict_value in (Verdict.FALSE_POSITIVE.value, Verdict.BENIGN_ANOMALY.value):
-            data["is_false_positive"] = (verdict_value == Verdict.FALSE_POSITIVE.value)
+            data["is_false_positive"] = verdict_value == Verdict.FALSE_POSITIVE.value
             data.setdefault("attack_techniques", [])
         elif verdict_value == Verdict.NEEDS_HUMAN.value:
             data["auto_investigatable"] = False
@@ -325,7 +378,10 @@ class TriageAgent(AgentPersona):
     def _guess_severity(self, signal: dict[str, Any]) -> str:
         """Quick heuristic to pick initial model before triage refines severity."""
         text = json.dumps(signal, default=str).lower()
-        if any(k in text for k in ("critical", "p1", "ransomware", "exfil", "data theft", "root", "breach")):
+        if any(
+            k in text
+            for k in ("critical", "p1", "ransomware", "exfil", "data theft", "root", "breach")
+        ):
             return Severity.P1_CRITICAL.value
         if any(k in text for k in ("high", "p2", "c2", "brute", "beacon", "isolat")):
             return Severity.P2_HIGH.value

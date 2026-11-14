@@ -32,9 +32,7 @@ def retry_async(
                     return await fn(*args, **kwargs)
                 except exceptions as exc:
                     if attempt >= max_attempts:
-                        logger.error(
-                            "%s failed after %d attempts: %s", fn.__name__, attempt, exc
-                        )
+                        logger.error("%s failed after %d attempts: %s", fn.__name__, attempt, exc)
                         raise
                     delay = min(max_delay, base_delay * (2 ** (attempt - 1)))
                     if jitter:

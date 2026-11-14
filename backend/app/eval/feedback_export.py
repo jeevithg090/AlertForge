@@ -7,6 +7,7 @@ human-in-the-loop: a person reviews the output before committing corpus changes.
 Usage:
     python -m app.eval.feedback_export
 """
+
 from __future__ import annotations
 
 import logging
@@ -25,12 +26,14 @@ def agreement_stats(rows: list[dict]) -> dict:
     )
     agreement_rate = round(agreements / total, 3) if total else 0.0
     false_negatives = sum(
-        r.get("count", 1) for r in rows
+        r.get("count", 1)
+        for r in rows
         if r.get("ai_verdict") in ("FALSE_POSITIVE", "BENIGN_ANOMALY")
         and r.get("human_verdict") == "TRUE_POSITIVE"
     )
     false_positives_confirmed = sum(
-        r.get("count", 1) for r in rows
+        r.get("count", 1)
+        for r in rows
         if r.get("ai_verdict") == "TRUE_POSITIVE"
         and r.get("human_verdict") in ("FALSE_POSITIVE", "BENIGN_ANOMALY")
     )

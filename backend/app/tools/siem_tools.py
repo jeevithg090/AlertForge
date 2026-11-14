@@ -4,6 +4,7 @@ Mocks a searchable auth-log/event store (Wazuh/Splunk-style). Pass a query
 string plus an optional time window. Gated: returns real data when
 ELASTICSEARCH_URL is set; otherwise returns scenario-aware mock events.
 """
+
 from __future__ import annotations
 
 import random
@@ -116,7 +117,9 @@ def _mock_siem(index, query, time_from, time_to, hours_back, size) -> dict:
                     "@timestamp": ts.isoformat(),
                     "event.action": "successful_login",
                     "user": random.choice(users),
-                    "source_ip": random.choice(malicious_pool + ["10.0.4.18", "192.168.1.40", "172.16.4.5"]),
+                    "source_ip": random.choice(
+                        malicious_pool + ["10.0.4.18", "192.168.1.40", "172.16.4.5"]
+                    ),
                     "host": "bastion-01",
                     "message": "Accepted publickey for user from internal IP",
                     "level": "INFO",

@@ -69,6 +69,7 @@ def get_redis() -> redis.Redis:
 
 # ---------- Streams ----------
 
+
 async def publish_to_stream(stage: str, payload: dict[str, Any]) -> str:
     """Append a message to a pipeline stream. Returns the message id."""
     stream = STREAMS[stage]
@@ -112,11 +113,16 @@ async def move_to_dlq(stage: str, msg_id: str, payload: dict[str, Any], reason: 
     await client.xack(STREAMS[stage], GROUPS[stage], msg_id)
     await client.xadd(
         STREAMS["dlq"],
-        {"source_stream": STREAMS[stage], "reason": reason, "data": json.dumps(payload, default=str)},
+        {
+            "source_stream": STREAMS[stage],
+            "reason": reason,
+            "data": json.dumps(payload, default=str),
+        },
     )
 
 
 # ---------- Pub/Sub (real-time dashboard) ----------
+
 
 def _channel(incident_id: str) -> str:
     return f"incident:{incident_id}:events"

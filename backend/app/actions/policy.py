@@ -10,6 +10,7 @@ budget.
 
 Everything here is stdlib-only (``ipaddress`` + ``fnmatch``) and side-effect free.
 """
+
 from __future__ import annotations
 
 import fnmatch
@@ -30,19 +31,40 @@ from app.actions.models import (
 
 # Internal/reserved ranges an edge-block must never touch (would be a self-DoS).
 _DEFAULT_PROTECTED_CIDRS = (
-    "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8",
-    "169.254.0.0/16", "100.64.0.0/10", "0.0.0.0/8",
-    "::1/128", "fc00::/7", "fe80::/10",
+    "10.0.0.0/8",
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+    "127.0.0.0/8",
+    "169.254.0.0/16",
+    "100.64.0.0/10",
+    "0.0.0.0/8",
+    "::1/128",
+    "fc00::/7",
+    "fe80::/10",
 )
 # Accounts that must never be auto-suspended/rotated (case-insensitive globs).
 _DEFAULT_PROTECTED_USERS = (
-    "breakglass", "break-glass", "root", "administrator", "admin",
-    "svc-*", "*-svc", "svc_*", "*service*", "*-service", "backup*", "da-*",
+    "breakglass",
+    "break-glass",
+    "root",
+    "administrator",
+    "admin",
+    "svc-*",
+    "*-svc",
+    "svc_*",
+    "*service*",
+    "*-service",
+    "backup*",
+    "da-*",
     "domain admin*",
 )
 # Hosts that must never be auto-isolated (globs).
 _DEFAULT_PROTECTED_HOSTS = (
-    "dc-*", "*-dc", "*-dc[0-9]*", "*domaincontroller*", "*.dc.*",
+    "dc-*",
+    "*-dc",
+    "*-dc[0-9]*",
+    "*domaincontroller*",
+    "*.dc.*",
 )
 # Action types considered too dangerous to ever auto-run in this build.
 _HARD_DENY_ACTIONS = frozenset({"shell_command"})
@@ -67,7 +89,9 @@ class GuardrailPolicy:
     hard_deny_actions: frozenset[str] = _HARD_DENY_ACTIONS
     max_actions_per_incident: int = 10
     max_actions_per_window: int = 25
-    two_person_severities: frozenset[str] = field(default_factory=lambda: frozenset({"P1_CRITICAL"}))
+    two_person_severities: frozenset[str] = field(
+        default_factory=lambda: frozenset({"P1_CRITICAL"})
+    )
     # (start, end) datetime pairs during which mutating actions are frozen.
     maintenance_windows: tuple[tuple[datetime, datetime], ...] = ()
 
@@ -77,9 +101,12 @@ class GuardrailPolicy:
             kill_switch=settings.action_kill_switch,
             dry_run_only=settings.action_dry_run_only,
             enabled_action_types=frozenset(_split(settings.action_enabled_types)),
-            protected_ip_cidrs=_DEFAULT_PROTECTED_CIDRS + tuple(_split(settings.action_protected_ip_cidrs)),
-            protected_users=_DEFAULT_PROTECTED_USERS + tuple(_split(settings.action_protected_users)),
-            protected_hosts=_DEFAULT_PROTECTED_HOSTS + tuple(_split(settings.action_protected_hosts)),
+            protected_ip_cidrs=_DEFAULT_PROTECTED_CIDRS
+            + tuple(_split(settings.action_protected_ip_cidrs)),
+            protected_users=_DEFAULT_PROTECTED_USERS
+            + tuple(_split(settings.action_protected_users)),
+            protected_hosts=_DEFAULT_PROTECTED_HOSTS
+            + tuple(_split(settings.action_protected_hosts)),
             max_actions_per_incident=settings.action_max_per_incident,
             max_actions_per_window=settings.action_max_per_window,
             two_person_severities=frozenset(_split(settings.action_two_person_severities)),
@@ -140,7 +167,8 @@ def evaluate(
     # 4. Change-freeze / maintenance window.
     if policy._in_maintenance_window(context.now):
         return GuardrailDecision(
-            Decision.DENY, ("mutating actions are frozen during a maintenance window",),
+            Decision.DENY,
+            ("mutating actions are frozen during a maintenance window",),
             "maintenance_window",
         )
 
@@ -153,12 +181,15 @@ def evaluate(
         )
     if kind == TargetKind.USER and policy._glob_match(tgt, policy.protected_users):
         return GuardrailDecision(
-            Decision.DENY, (f"'{tgt}' is a protected account (break-glass/service/privileged)",),
+            Decision.DENY,
+            (f"'{tgt}' is a protected account (break-glass/service/privileged)",),
             "protected_user",
         )
     if kind == TargetKind.HOST and policy._glob_match(tgt, policy.protected_hosts):
         return GuardrailDecision(
-            Decision.DENY, (f"'{tgt}' is a protected host (critical infrastructure)",), "protected_host"
+            Decision.DENY,
+            (f"'{tgt}' is a protected host (critical infrastructure)",),
+            "protected_host",
         )
     if kind in (TargetKind.CONFIG, TargetKind.SHELL) and not tgt:
         return GuardrailDecision(Decision.DENY, ("missing action target",), "no_target")

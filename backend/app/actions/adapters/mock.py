@@ -6,6 +6,7 @@ Every result is tagged ``simulated: True`` so it's never mistaken for a real
 mutation. Swapping in a real adapter is a drop-in: implement the same five
 methods against the vendor API and set ``simulated = False``.
 """
+
 from __future__ import annotations
 
 import random

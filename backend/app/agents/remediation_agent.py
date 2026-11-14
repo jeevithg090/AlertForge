@@ -4,6 +4,7 @@ Uses the smart-tier model with strict structured output to generate a validated
 containment plan (RemediationPlan in the data layer). Double-validated: JSON
 schema strict + Pydantic business rules.
 """
+
 from __future__ import annotations
 
 import json
@@ -80,13 +81,18 @@ class RemediationAgent(AgentPersona):
             {"role": "system", "content": CONTAINMENT_SYSTEM},
             {
                 "role": "user",
-                "content": json.dumps({
-                    "incident_id": incident_id,
-                    "severity": severity,
-                    "affected_service": incident.get("affected_service", "unknown") if incident else "unknown",
-                    "triage_result": incident.get("triage_result", {}) if incident else {},
-                    "investigation_finding": investigation_finding,
-                }, default=str),
+                "content": json.dumps(
+                    {
+                        "incident_id": incident_id,
+                        "severity": severity,
+                        "affected_service": incident.get("affected_service", "unknown")
+                        if incident
+                        else "unknown",
+                        "triage_result": incident.get("triage_result", {}) if incident else {},
+                        "investigation_finding": investigation_finding,
+                    },
+                    default=str,
+                ),
             },
         ]
 
@@ -102,9 +108,7 @@ class RemediationAgent(AgentPersona):
         plan.incident_id = incident_id
 
         if plan.confidence_score < 0.6 and not plan.escalation_recommendation:
-            plan.escalation_recommendation = (
-                f"Low containment confidence ({plan.confidence_score:.0%}) — escalate to SecOps / IR lead"
-            )
+            plan.escalation_recommendation = f"Low containment confidence ({plan.confidence_score:.0%}) — escalate to SecOps / IR lead"
 
         await self.say(
             incident_id,
@@ -131,19 +135,25 @@ class RemediationAgent(AgentPersona):
             ip = ioc.get("value", "")
             if not ip:
                 continue
-            already = any(s.tool_parameters and s.tool_parameters.get("ip_address") == ip for s in steps)
+            already = any(
+                s.tool_parameters and s.tool_parameters.get("ip_address") == ip for s in steps
+            )
             if already:
                 continue
-            steps.append(RemediationStep(
-                step_number=n, action_type="block_ip",
-                description=f"Block malicious IP {ip} at the edge firewall",
-                tool_to_invoke="block_ip", tool_parameters={"ip_address": ip},
-                estimated_duration_seconds=15,
-                risk_level=RemediationRisk.REQUIRES_APPROVAL,
-                rollback_procedure=f"Remove firewall rule for {ip} to restore connectivity.",
-                validation_check=f"{ip} no longer appears in SIEM auth logs within 10 minutes.",
-                requires_human_approval=True,
-            ))
+            steps.append(
+                RemediationStep(
+                    step_number=n,
+                    action_type="block_ip",
+                    description=f"Block malicious IP {ip} at the edge firewall",
+                    tool_to_invoke="block_ip",
+                    tool_parameters={"ip_address": ip},
+                    estimated_duration_seconds=15,
+                    risk_level=RemediationRisk.REQUIRES_APPROVAL,
+                    rollback_procedure=f"Remove firewall rule for {ip} to restore connectivity.",
+                    validation_check=f"{ip} no longer appears in SIEM auth logs within 10 minutes.",
+                    requires_human_approval=True,
+                )
+            )
             n += 1
         # 2. Suspend every suspicious / privileged user
         for ioc in iocs:
@@ -152,48 +162,63 @@ class RemediationAgent(AgentPersona):
             user = ioc.get("value", "")
             if not user:
                 continue
-            already = any(s.tool_parameters and s.tool_parameters.get("username") == user for s in steps)
+            already = any(
+                s.tool_parameters and s.tool_parameters.get("username") == user for s in steps
+            )
             if already:
                 continue
-            steps.append(RemediationStep(
-                step_number=n, action_type="suspend_account",
-                description=f"Suspend compromised account {user}",
-                tool_to_invoke="suspend_account", tool_parameters={"username": user},
-                estimated_duration_seconds=15,
-                risk_level=RemediationRisk.HIGH,
-                rollback_procedure=f"Re-enable {user} in the IdP after credentials are rotated.",
-                validation_check=f"No new sessions for {user} in SIEM auth logs within 10 minutes.",
-                requires_human_approval=True,
-            ))
+            steps.append(
+                RemediationStep(
+                    step_number=n,
+                    action_type="suspend_account",
+                    description=f"Suspend compromised account {user}",
+                    tool_to_invoke="suspend_account",
+                    tool_parameters={"username": user},
+                    estimated_duration_seconds=15,
+                    risk_level=RemediationRisk.HIGH,
+                    rollback_procedure=f"Re-enable {user} in the IdP after credentials are rotated.",
+                    validation_check=f"No new sessions for {user} in SIEM auth logs within 10 minutes.",
+                    requires_human_approval=True,
+                )
+            )
             n += 1
         # 3. Isolate every compromised host
         for h in incident.get("affected_hosts", []) or []:
-            steps.append(RemediationStep(
-                step_number=n, action_type="isolate_host",
-                description=f"Isolate compromised host {h} via EDR",
-                tool_to_invoke="isolate_host", tool_parameters={"hostname": h},
-                estimated_duration_seconds=30,
-                risk_level=RemediationRisk.HIGH,
-                rollback_procedure=f"Release EDR isolation on {h}.",
-                validation_check=f"{h} shows no outbound network connections in EDR.",
-                requires_human_approval=True,
-            ))
+            steps.append(
+                RemediationStep(
+                    step_number=n,
+                    action_type="isolate_host",
+                    description=f"Isolate compromised host {h} via EDR",
+                    tool_to_invoke="isolate_host",
+                    tool_parameters={"hostname": h},
+                    estimated_duration_seconds=30,
+                    risk_level=RemediationRisk.HIGH,
+                    rollback_procedure=f"Release EDR isolation on {h}.",
+                    validation_check=f"{h} shows no outbound network connections in EDR.",
+                    requires_human_approval=True,
+                )
+            )
             n += 1
         # 4. Always end with a SOC notification
-        steps.append(RemediationStep(
-            step_number=n, action_type="notification",
-            description="Notify on-call SecOps lead in #soc-primary",
-            tool_to_invoke=None,
-            estimated_duration_seconds=5,
-            risk_level=RemediationRisk.LOW,
-            rollback_procedure=None,
-            validation_check="Slack message acknowledged.",
-            requires_human_approval=False,
-        ))
+        steps.append(
+            RemediationStep(
+                step_number=n,
+                action_type="notification",
+                description="Notify on-call SecOps lead in #soc-primary",
+                tool_to_invoke=None,
+                estimated_duration_seconds=5,
+                risk_level=RemediationRisk.LOW,
+                rollback_procedure=None,
+                validation_check="Slack message acknowledged.",
+                requires_human_approval=False,
+            )
+        )
 
         return RemediationPlan(
             incident_id=incident_id,
-            root_cause_summary=finding.get("root_cause", "Security finding under investigation")[:200],
+            root_cause_summary=finding.get("root_cause", "Security finding under investigation")[
+                :200
+            ],
             confidence_score=min(0.85, 0.55 + 0.08 * len(steps)),
             estimated_total_duration_minutes=2,
             steps=steps,

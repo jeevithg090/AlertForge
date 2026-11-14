@@ -1,4 +1,5 @@
 """Prometheus metrics query tool."""
+
 from __future__ import annotations
 
 import random
@@ -60,7 +61,12 @@ def _mock_query(promql, start, end, step):
         "status": "success",
         "data": {
             "resultType": "matrix",
-            "result": [{"metric": {"__name__": promql.split("{")[0], "instance": "prod-01"}, "values": values}],
+            "result": [
+                {
+                    "metric": {"__name__": promql.split("{")[0], "instance": "prod-01"},
+                    "values": values,
+                }
+            ],
         },
         "query": promql,
     }

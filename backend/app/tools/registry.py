@@ -5,6 +5,7 @@ The registry collects them and exposes:
 - get_tool_schemas() -> list of OpenAI function tool definitions
 - execute_tool(name, args) -> result
 """
+
 from __future__ import annotations
 
 import inspect
