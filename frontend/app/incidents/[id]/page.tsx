@@ -4,7 +4,28 @@ import { useEffect, useState, useRef, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useIncidentStream, SSEEvent } from '@/lib/sse';
-import { fetchIncident, fetchIncidentSteps, fetchIncidentEvents, approveStep, rejectStep, escalateStep, generateIncidentHunt, generateDetectionRule, submitFeedback } from '@/lib/api';
+import {
+  ApiError,
+  type ApiRecord,
+  approveStep,
+  escalateStep,
+  fetchIncident,
+  fetchIncidentEvents,
+  fetchIncidentSteps,
+  generateDetectionRule,
+  generateIncidentHunt,
+  rejectStep,
+  submitFeedback,
+} from '@/lib/api';
+
+function errorMessage(err: unknown, fallback: string): string {
+  if (err instanceof ApiError) {
+    if (err.status === 401) return 'Sign in required';
+    if (err.status === 403) return 'Your role is not allowed to do this';
+    return err.message;
+  }
+  return fallback;
+}
 import ReactMarkdown from 'react-markdown';
 
 const PERSONA_COLORS: Record<string, string> = {
@@ -85,8 +106,7 @@ interface HuntPlan { generated_from: string; summary?: string; hypotheses: HuntH
 export default function IncidentPage() {
   const params = useParams();
   const incidentId = params.id as string;
-  const { events, thinkingChunks, connected } = useIncidentStream(incidentId);
-  const [incident, setIncident] = useState<any>(null);
+  const [incident, setIncident] = useState<ApiRecord | null>(null);
   const [agentMessages, setAgentMessages] = useState<SSEEvent[]>([]);
   const [toolCalls, setToolCalls] = useState<SSEEvent[]>([]);
   const [toolResults, setToolResults] = useState<Record<string, SSEEvent>>({}); // keyed by `${tool}|${round}`
@@ -96,14 +116,19 @@ export default function IncidentPage() {
   const [thinkingExpanded, setThinkingExpanded] = useState(true);
   const [hunt, setHunt] = useState<HuntPlan | null>(null);
   const [huntLoading, setHuntLoading] = useState(false);
-  const [detectionRule, setDetectionRule] = useState<{ rule: any; yaml: string; path: string } | null>(null);
+  const [detectionRule, setDetectionRule] = useState<{ rule: ApiRecord; yaml: string; path: string } | null>(null);
   const [detectionLoading, setDetectionLoading] = useState(false);
+  const [actionError, setActionError] = useState('');
+  const [loadError, setLoadError] = useState('');
   const chatRef = useRef<HTMLDivElement>(null);
 
   const runHunt = async () => {
     setHuntLoading(true);
+    setActionError('');
     try {
-      setHunt(await generateIncidentHunt(incidentId));
+      setHunt((await generateIncidentHunt(incidentId)) as HuntPlan);
+    } catch (err) {
+      setActionError(errorMessage(err, 'Threat-hunt generation failed'));
     } finally {
       setHuntLoading(false);
     }
@@ -111,8 +136,11 @@ export default function IncidentPage() {
 
   const runDetectionRule = async () => {
     setDetectionLoading(true);
+    setActionError('');
     try {
       setDetectionRule(await generateDetectionRule(incidentId));
+    } catch (err) {
+      setActionError(errorMessage(err, 'Detection-rule generation failed'));
     } finally {
       setDetectionLoading(false);
     }
@@ -120,16 +148,18 @@ export default function IncidentPage() {
 
   const copyYaml = () => {
     if (detectionRule?.yaml) {
-      navigator.clipboard.writeText(detectionRule.yaml);
+      navigator.clipboard?.writeText(detectionRule.yaml).catch(() => {});
     }
   };
 
   // ----- rehydration on mount -----
   useEffect(() => {
     if (!incidentId) return;
-    fetchIncident(incidentId).then(setIncident);
+    fetchIncident(incidentId)
+      .then(setIncident)
+      .catch(err => setLoadError(errorMessage(err, 'Could not load incident')));
     fetchIncidentEvents(incidentId, 500).then(data => {
-      const evs: SSEEvent[] = (data.events || []).slice().reverse(); // restore oldest-first
+      const evs = ((data.events || []) as SSEEvent[]).slice().reverse(); // restore oldest-first
       const stepsFromEvs: Record<string, ApprovalStep> = {};
       let pir = '';
       for (const e of evs) {
@@ -151,7 +181,7 @@ export default function IncidentPage() {
               : e.decision === 'rejected' ? 'REJECTED'
               : e.decision === 'escalated' ? 'ESCALATED'
               : 'APPROVED';
-            stepsFromEvs[e.step_id].status = decision as any;
+            stepsFromEvs[e.step_id].status = decision as ApprovalStep['status'];
           }
         }
         if (e.type === 'pir.streaming' && e.content) pir += e.content;
@@ -161,11 +191,11 @@ export default function IncidentPage() {
         setApprovalSteps(prev => ({ ...prev, ...stepsFromEvs }));
       }
       if (pir) setPirContent(pir);
-    });
+    }).catch(() => { /* live stream still works; history is best-effort */ });
     // rehydrate approval cards from the steps REST endpoint (covers a refresh
     // when the approval card event has already scrolled off the bounded event log)
     fetchIncidentSteps(incidentId).then(data => {
-      const steps: any[] = data.steps || [];
+      const steps: ApiRecord[] = data.steps || [];
       if (!steps.length) return;
       setApprovalSteps(prev => {
         const next = { ...prev };
@@ -174,19 +204,19 @@ export default function IncidentPage() {
             next[s.id] = {
               step_id: s.id, step_number: s.step_number, description: s.description,
               risk_level: s.risk_level, action_type: s.action_type, rollback: s.rollback_procedure,
-              status: s.status as any,
+              status: s.status as ApprovalStep['status'],
             };
           }
         }
         return next;
       });
-    });
+    }).catch(() => { /* steps are re-sent over SSE */ });
   }, [incidentId]);
 
-  // ----- live SSE events -----
-  useEffect(() => {
-    if (events.length === 0) return;
-    const last = events[events.length - 1];
+  // ----- live SSE events (every event, so bursts aren't dropped) -----
+  const [liveEvents, setLiveEvents] = useState<SSEEvent[]>([]);
+  const { thinkingChunks, connected } = useIncidentStream(incidentId, (last: SSEEvent) => {
+    setLiveEvents(prev => [...prev.slice(-499), last]);
 
     if (last.type === 'agent.message') setAgentMessages(prev => [...prev, last]);
     if (last.type === 'tool.called') setToolCalls(prev => [...prev, last]);
@@ -212,12 +242,12 @@ export default function IncidentPage() {
           : last.decision === 'escalated' ? 'ESCALATED'
           : last.decision === 'auto_approved_timeout' ? 'APPROVED'
           : 'APPROVED';
-        return { ...prev, [last.step_id]: { ...cur, status: decision as any } };
+        return { ...prev, [last.step_id]: { ...cur, status: decision as ApprovalStep['status'] } };
       });
     }
     if (last.type === 'pir.streaming') setPirContent(prev => prev + (last.content || ''));
     if (last.type === 'jira.ticket_created') setJiraTicket({ ticket_id: last.ticket_id, ticket_url: last.ticket_url });
-  }, [events]);
+  });
 
   useEffect(() => {
     if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
@@ -232,7 +262,7 @@ export default function IncidentPage() {
 
   return (
     <div className="min-h-screen bg-warroom-bg text-gray-200">
-      <header className="border-b border-warroom-border px-6 py-3 flex items-center justify-between">
+      <header className="border-b border-warroom-border px-4 sm:px-6 py-3 flex flex-wrap gap-2 items-center justify-between">
         <div className="flex items-center gap-3">
           <Link href="/dashboard" className="text-gray-400 hover:text-white">← Dashboard</Link>
           <span className="text-sm text-gray-500">|</span>
@@ -249,7 +279,7 @@ export default function IncidentPage() {
               {VERDICT_LABEL[verdict] || verdict}
             </span>
           )}
-          {incident?.alert_count > 1 && (
+          {incident && incident.alert_count > 1 && (
             <span
               className="px-2 py-0.5 rounded text-xs font-bold bg-warroom-anlst/20 border border-warroom-anlst/40 text-warroom-anlst"
               title="Correlated alerts folded into this incident by the dedup engine"
@@ -266,7 +296,12 @@ export default function IncidentPage() {
         </div>
       </header>
 
-      <main className="grid grid-cols-1 lg:grid-cols-4 gap-4 p-4 h-[calc(100vh-60px)]">
+      {(loadError || actionError) && (
+        <div role="alert" className="mx-4 mt-3 bg-red-500/10 border border-red-500/40 text-red-300 rounded-lg p-3 text-sm">
+          {loadError || actionError}
+        </div>
+      )}
+      <main className="grid grid-cols-1 lg:grid-cols-4 gap-4 p-4 lg:h-[calc(100vh-60px)]">
         {/* War Room Chat */}
         <div className="lg:col-span-3 flex flex-col gap-4 overflow-hidden">
           {/* MITRE ATT&CK Mapping */}
@@ -329,7 +364,7 @@ export default function IncidentPage() {
 
         {/* Agent Status Sidebar */}
         <div className="space-y-4">
-          <AgentStatusPanel events={events} />
+          <AgentStatusPanel events={liveEvents} />
           {incident && (
             <div className="bg-warroom-surface border border-warroom-border rounded-lg p-4">
               <h3 className="text-sm font-semibold text-gray-400 mb-2">Incident</h3>
@@ -347,7 +382,7 @@ export default function IncidentPage() {
           )}
 
           {/* Correlated alerts (dedup engine) */}
-          {incident?.alert_count > 1 && (
+          {incident && incident.alert_count > 1 && (
             <div className="bg-warroom-surface border border-warroom-anlst/30 rounded-lg p-4">
               <h3 className="text-sm font-semibold text-warroom-anlst mb-2">
                 🔗 Correlated Alerts · ×{incident.alert_count}
@@ -357,7 +392,7 @@ export default function IncidentPage() {
                 {' '}{incident.alert_count} separate investigations.
               </p>
               <div className="space-y-1 max-h-40 overflow-y-auto">
-                {(Array.isArray(incident.related_signals) ? incident.related_signals : []).slice(-6).reverse().map((s: any, i: number) => (
+                {(Array.isArray(incident.related_signals) ? incident.related_signals : []).slice(-6).reverse().map((s: ApiRecord, i: number) => (
                   <div key={i} className="text-xs border-l-2 border-warroom-anlst/40 pl-2">
                     <span className="text-warroom-anlst font-mono">{s.reason}</span>
                     <span className="text-gray-500"> · {s.source}</span>
@@ -488,10 +523,16 @@ function HuntPanel({ hunt, loading, onGenerate }: { hunt: HuntPlan | null; loadi
 
 function FeedbackPanel({ incidentId }: { incidentId: string }) {
   const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState('');
 
   const handleFeedback = async (verdict: string) => {
-    await submitFeedback(incidentId, verdict);
-    setSubmitted(true);
+    setError('');
+    try {
+      await submitFeedback(incidentId, verdict);
+      setSubmitted(true);
+    } catch (err) {
+      setError(errorMessage(err, 'Could not record feedback'));
+    }
   };
 
   if (submitted) {
@@ -512,12 +553,13 @@ function FeedbackPanel({ incidentId }: { incidentId: string }) {
         <button onClick={() => handleFeedback('BENIGN_ANOMALY')} className="text-xs px-2 py-1 rounded bg-yellow-500/20 border border-yellow-500/40 text-yellow-300 hover:bg-yellow-500/30">~ Benign</button>
         <button onClick={() => handleFeedback('NEEDS_HUMAN')} className="text-xs px-2 py-1 rounded bg-orange-500/20 border border-orange-500/40 text-orange-300 hover:bg-orange-500/30">? Needs human</button>
       </div>
+      {error && <p role="alert" className="text-xs text-red-400 mt-2">{error}</p>}
     </div>
   );
 }
 
 function DetectionRulePanel({ rule, loading, onGenerate, onCopy }: {
-  rule: { rule: any; yaml: string; path: string } | null;
+  rule: { rule: ApiRecord; yaml: string; path: string } | null;
   loading: boolean;
   onGenerate: () => void;
   onCopy: () => void;
@@ -612,12 +654,23 @@ function ToolCallEntry({ event, result }: { event: SSEEvent; result?: SSEEvent }
 function ApprovalCard({ step }: { step: ApprovalStep }) {
   const [ratOpen, setRatOpen] = useState(false);
   const [rationale, setRationale] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
 
   const handle = async (action: 'approved' | 'rejected' | 'escalated') => {
-    if (!step.step_id) return;
-    if (action === 'approved') await approveStep(step.step_id, rationale);
-    else if (action === 'rejected') await rejectStep(step.step_id, rationale || 'Rejected by operator');
-    else if (action === 'escalated') await escalateStep(step.step_id, rationale || 'Escalated by operator');
+    if (!step.step_id || busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      if (action === 'approved') await approveStep(step.step_id, rationale);
+      else if (action === 'rejected') await rejectStep(step.step_id, rationale || 'Rejected by operator');
+      else await escalateStep(step.step_id, rationale || 'Escalated by operator');
+      // The card flips state when the approval.received event arrives over SSE.
+    } catch (err) {
+      setError(errorMessage(err, 'Decision was not recorded'));
+    } finally {
+      setBusy(false);
+    }
   };
 
   if (step.status !== 'AWAITING_APPROVAL') {
@@ -652,6 +705,7 @@ function ApprovalCard({ step }: { step: ApprovalStep }) {
         </button>
         {ratOpen && (
           <textarea
+            aria-label="Approval rationale"
             value={rationale}
             onChange={e => setRationale(e.target.value)}
             placeholder="Auditor rationale (recorded in the immutable audit log)..."
@@ -660,16 +714,17 @@ function ApprovalCard({ step }: { step: ApprovalStep }) {
         )}
       </div>
       <div className="flex gap-3">
-        <button onClick={() => handle('approved')} className="flex-1 py-2 px-4 bg-warroom-success/20 border border-warroom-success/40 rounded text-sm font-bold text-warroom-success hover:bg-warroom-success/30 transition">
+        <button type="button" disabled={busy} onClick={() => handle('approved')} className="flex-1 disabled:opacity-50 py-2 px-4 bg-warroom-success/20 border border-warroom-success/40 rounded text-sm font-bold text-warroom-success hover:bg-warroom-success/30 transition">
           ✓ APPROVE
         </button>
-        <button onClick={() => handle('rejected')} className="flex-1 py-2 px-4 bg-warroom-alert/20 border border-warroom-alert/40 rounded text-sm font-bold text-warroom-alert hover:bg-warroom-alert/30 transition">
+        <button type="button" disabled={busy} onClick={() => handle('rejected')} className="flex-1 disabled:opacity-50 py-2 px-4 bg-warroom-alert/20 border border-warroom-alert/40 rounded text-sm font-bold text-warroom-alert hover:bg-warroom-alert/30 transition">
           ✗ REJECT
         </button>
-        <button onClick={() => handle('escalated')} className="flex-1 py-2 px-4 bg-warroom-warning/20 border border-warroom-warning/40 rounded text-sm font-bold text-warroom-warning hover:bg-warroom-warning/30 transition">
+        <button type="button" disabled={busy} onClick={() => handle('escalated')} className="flex-1 disabled:opacity-50 py-2 px-4 bg-warroom-warning/20 border border-warroom-warning/40 rounded text-sm font-bold text-warroom-warning hover:bg-warroom-warning/30 transition">
           ↑ ESCALATE
         </button>
       </div>
+      {error && <p role="alert" className="text-xs text-red-400 mt-2">{error}</p>}
     </div>
   );
 }
