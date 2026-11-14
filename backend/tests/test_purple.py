@@ -58,7 +58,7 @@ def test_partial_technique_recall():
         "verdict": "TRUE_POSITIVE",
     }
     score = score_chain(chain, observed)
-    assert abs(score["technique_recall"] - 1.0/3.0) < 0.001
+    assert abs(score["technique_recall"] - 1.0 / 3.0) < 0.001
     assert score["passed"] is False  # recall < 0.5
 
 
@@ -90,12 +90,30 @@ def test_single_step_chain_no_correlation():
 
 def test_aggregate_math():
     scores = [
-        {"passed": True, "technique_recall": 1.0, "chain": "a", "correlation_ok": True,
-         "incidents_created": 1, "alerts_folded": 0, "technique_hits": [], "technique_expected": [],
-         "verdict": "TRUE_POSITIVE", "verdict_ok": True},
-        {"passed": False, "technique_recall": 0.5, "chain": "b", "correlation_ok": False,
-         "incidents_created": 2, "alerts_folded": 0, "technique_hits": [], "technique_expected": [],
-         "verdict": "TRUE_POSITIVE", "verdict_ok": True},
+        {
+            "passed": True,
+            "technique_recall": 1.0,
+            "chain": "a",
+            "correlation_ok": True,
+            "incidents_created": 1,
+            "alerts_folded": 0,
+            "technique_hits": [],
+            "technique_expected": [],
+            "verdict": "TRUE_POSITIVE",
+            "verdict_ok": True,
+        },
+        {
+            "passed": False,
+            "technique_recall": 0.5,
+            "chain": "b",
+            "correlation_ok": False,
+            "incidents_created": 2,
+            "alerts_folded": 0,
+            "technique_hits": [],
+            "technique_expected": [],
+            "verdict": "TRUE_POSITIVE",
+            "verdict_ok": True,
+        },
     ]
     agg = aggregate(scores)
     assert agg["chains"] == 2
@@ -113,3 +131,27 @@ def test_chain_steps_have_non_empty_text():
                 assert "SSH" in step.raw_text or "failed" in step.raw_text
             elif step.expected_technique == "T1595":
                 assert "scan" in step.raw_text.lower()
+
+
+def test_summarize_ingestion_counts_folded_chain_as_one_incident():
+    from app.purple.runner import summarize_ingestion
+
+    summary = summarize_ingestion(
+        [
+            {"accepted": True, "incident_id": "inc-1"},
+            {"accepted": True, "correlated_into": "inc-1"},
+            {"accepted": True, "correlated_into": "inc-1"},
+        ]
+    )
+    assert summary == {"primary_id": "inc-1", "incidents_created": 1, "alerts_folded": 2}
+
+
+def test_summarize_ingestion_uncorrelated_and_prefolded():
+    from app.purple.runner import summarize_ingestion
+
+    split = summarize_ingestion([{"incident_id": "a"}, {"incident_id": "b"}])
+    assert split["incidents_created"] == 2 and split["alerts_folded"] == 0
+    # Every alert folded into an incident from an earlier run.
+    prior = summarize_ingestion([{"correlated_into": "old"}, {"correlated_into": "old"}])
+    assert prior == {"primary_id": "old", "incidents_created": 1, "alerts_folded": 2}
+    assert summarize_ingestion([{"detail": "error"}])["primary_id"] is None

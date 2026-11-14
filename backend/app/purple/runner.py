@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 
 import httpx
 
@@ -14,15 +15,32 @@ _TIMEOUT = 90.0
 _POLL_INTERVAL = 5.0
 
 
+def summarize_ingestion(responses: list[dict]) -> dict:
+    """Reduce per-alert ingestion responses to what the scorecard needs.
+
+    ``incidents_created`` counts the distinct incidents the chain landed in
+    (new ones plus any it folded into), so a perfectly correlated chain is 1.
+    """
+    new_ids = [r["incident_id"] for r in responses if r.get("incident_id")]
+    folded_into = [r["correlated_into"] for r in responses if r.get("correlated_into")]
+    primary = new_ids[0] if new_ids else (folded_into[0] if folded_into else None)
+    return {
+        "primary_id": primary,
+        "incidents_created": len(set(new_ids) | set(folded_into)),
+        "alerts_folded": len(folded_into),
+    }
+
+
 async def run_chain(chain: AttackChain, base_url: str = "http://localhost:8000") -> dict:
     """Run a single attack chain against a running SentinelForge stack."""
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  Chain: {chain.name} — {chain.description}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        incident_ids = []
-        correlated_into = None
+    token = os.environ.get("SENTINELFORGE_TOKEN", "")
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    async with httpx.AsyncClient(timeout=30.0, headers=headers) as client:
+        responses: list[dict] = []
 
         for step in chain.steps:
             print(f"\n  ▶ Step: {step.name} ({step.expected_technique})")
@@ -39,27 +57,26 @@ async def run_chain(chain: AttackChain, base_url: str = "http://localhost:8000")
 
             print(f"    Response: {json.dumps(data, default=str)[:200]}")
 
+            responses.append(data)
             if data.get("correlated_into"):
-                cid = data["correlated_into"]
-                correlated_into = cid
-                print(f"    → folded into {cid[:12]}...")
+                print(f"    → folded into {data['correlated_into'][:12]}...")
             elif data.get("incident_id"):
-                iid = data["incident_id"]
-                incident_ids.append(iid)
-                print(f"    → NEW incident {iid[:12]}...")
+                print(f"    → NEW incident {data['incident_id'][:12]}...")
             else:
                 print(f"    → unexpected: {data}")
 
             if step.delay_seconds > 0:
                 await asyncio.sleep(step.delay_seconds)
 
-        # Determine the primary incident ID.
-        primary_id = correlated_into or (incident_ids[0] if incident_ids else None)
+        summary = summarize_ingestion(responses)
+        primary_id = summary["primary_id"]
         if not primary_id:
             return {"error": "no incident created", "incidents_created": 0}
 
         # Wait for triage to complete.
-        print(f"\n  ⏳ Waiting for triage (polling every {_POLL_INTERVAL}s, timeout {_TIMEOUT}s)...")
+        print(
+            f"\n  ⏳ Waiting for triage (polling every {_POLL_INTERVAL}s, timeout {_TIMEOUT}s)..."
+        )
         start = asyncio.get_event_loop().time()
         incident = None
         while (asyncio.get_event_loop().time() - start) < _TIMEOUT:
@@ -72,7 +89,10 @@ async def run_chain(chain: AttackChain, base_url: str = "http://localhost:8000")
             await asyncio.sleep(_POLL_INTERVAL)
 
         if not incident:
-            return {"error": "incident not found after polling", "incidents_created": len(incident_ids)}
+            return {
+                "error": "incident not found after polling",
+                "incidents_created": summary["incidents_created"],
+            }
 
         # Collect results.
         triage = incident.get("triage_result") or {}
@@ -90,8 +110,8 @@ async def run_chain(chain: AttackChain, base_url: str = "http://localhost:8000")
                 techniques = []
 
         observed = {
-            "incidents_created": len(incident_ids) + (1 if correlated_into else 0),
-            "alerts_folded": len(chain.steps) - 1 if correlated_into else 0,
+            "incidents_created": summary["incidents_created"],
+            "alerts_folded": summary["alerts_folded"],
             "technique_ids": [t.get("technique_id", "") for t in techniques],
             "verdict": triage.get("verdict", ""),
             "time_to_triage_seconds": None,  # simplified — would need timestamps
