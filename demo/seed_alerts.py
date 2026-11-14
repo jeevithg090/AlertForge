@@ -13,17 +13,43 @@ Usage:
     python demo/seed_alerts.py --scenario injection_attempt
     python demo/seed_alerts.py --storm 30      # correlation/dedup demo
     python demo/seed_alerts.py --all
+
+Authentication (only needed when the backend enforces it, i.e. not the
+default development compose stack):
+    SENTINELFORGE_TOKEN   JWT from POST /api/v1/auth/login (analyst role or above)
+                          for the /ingest/text and /ingest/email endpoints.
+    SENTINELFORGE_SECRET  The backend's SECRET_KEY, used to HMAC-sign webhook
+                          payloads (/ingest/siem|edr|ids|webhook).
 """
+
 from __future__ import annotations
 
 import argparse
+import hashlib
+import hmac
 import json
+import os
 import sys
 import time
 
 import requests
 
 BACKEND = "http://localhost:8000"
+TOKEN = os.environ.get("SENTINELFORGE_TOKEN", "")
+WEBHOOK_SECRET = os.environ.get("SENTINELFORGE_SECRET", "")
+
+
+def _post(url: str, payload: dict) -> requests.Response:
+    """POST a JSON payload with whatever auth the backend expects."""
+    body = json.dumps(payload).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    if TOKEN:
+        headers["Authorization"] = f"Bearer {TOKEN}"
+    if WEBHOOK_SECRET:
+        digest = hmac.new(WEBHOOK_SECRET.encode("utf-8"), body, hashlib.sha256).hexdigest()
+        headers["X-SentinelForge-Signature"] = f"sha256={digest}"
+    return requests.post(url, data=body, headers=headers, timeout=60)
+
 
 SCENARIOS = {
     # ---- Primary hero demo moment ---------------------------------------
@@ -38,7 +64,6 @@ SCENARIOS = {
         },
         "description": "Brute force SSH attack (Wazuh-style, primary hero demo)",
     },
-
     # ---- Reuses search_cve_database via product version ------------------
     "c2_beacon": {
         "endpoint": "/api/v1/ingest/text",
@@ -51,7 +76,6 @@ SCENARIOS = {
         },
         "description": "C2 beaconing / DNS tunnelling (Suricata)",
     },
-
     # ---- Ingested via /ingest/email ---------------------------------------
     "phishing_email": {
         "endpoint": "/api/v1/ingest/email",
@@ -69,7 +93,6 @@ SCENARIOS = {
         },
         "description": "Phishing email reported by user",
     },
-
     # ---- Living off the land (PowerShell) ---------------------------------
     "suspicious_powershell": {
         "endpoint": "/api/v1/ingest/text",
@@ -83,7 +106,6 @@ SCENARIOS = {
         },
         "description": "Suspicious PowerShell (LOLBins / Living off the Land)",
     },
-
     # ---- Data exfiltration anomaly ----------------------------------------
     "data_exfil": {
         "endpoint": "/api/v1/ingest/text",
@@ -96,7 +118,6 @@ SCENARIOS = {
         },
         "description": "Data exfiltration anomaly (egress spike)",
     },
-
     # ---- Ransomware --------------------------------------------------------
     "ransomware": {
         "endpoint": "/api/v1/ingest/text",
@@ -109,7 +130,6 @@ SCENARIOS = {
         },
         "description": "Ransomware file-extension flood (Impact tactic)",
     },
-
     # ---- Real SIEM-shaped Wazuh payload (raw JSON) ------------------------
     "siem_wazuh": {
         "endpoint": "/api/v1/ingest/siem",
@@ -134,7 +154,6 @@ SCENARIOS = {
         },
         "description": "SIEM (Wazuh-style) webhook payload",
     },
-
     # ---- Ambiguous natural-language input ---------------------------------
     "ambiguous_text": {
         "endpoint": "/api/v1/ingest/text",
@@ -143,7 +162,6 @@ SCENARIOS = {
         },
         "description": "Ambiguous Slack-style analyst paste",
     },
-
     # ---- Prompt injection (must be blocked by PromptGuard) -----------------
     "injection_attempt": {
         "endpoint": "/api/v1/ingest/text",
@@ -179,7 +197,7 @@ def fire_storm(n: int = 25) -> None:
             f"Brute force indicator."
         )
         try:
-            resp = requests.post(url, json={"text": text}, timeout=60)
+            resp = _post(url, {"text": text})
             data = resp.json()
         except requests.ConnectionError:
             print(f"  ERROR: Cannot connect to {BACKEND}. Is the backend running?")
@@ -188,8 +206,10 @@ def fire_storm(n: int = 25) -> None:
             data = {}
         if data.get("correlated_into"):
             folded += 1
-            print(f"  [{i:>3}] folded → {data['correlated_into'][:8]} "
-                  f"({data.get('reason')}; ×{data.get('alert_count')})")
+            print(
+                f"  [{i:>3}] folded → {data['correlated_into'][:8]} "
+                f"({data.get('reason')}; ×{data.get('alert_count')})"
+            )
         elif data.get("incident_id"):
             new_incident = data["incident_id"]
             print(f"  [{i:>3}] NEW incident {new_incident[:8]}")
@@ -214,18 +234,7 @@ def fire_scenario(name: str) -> dict:
     print(f"  POST {url}")
 
     try:
-        # The /siem endpoint takes the raw payload directly; others take a
-        # JSON object. Send the scenario's payload as-is; for /siem we strip
-        # to a string body so FastAPI's Request.body() gets the raw JSON.
-        if scenario["endpoint"].endswith("/siem"):
-            resp = requests.post(
-                url,
-                data=json.dumps(scenario["payload"]),
-                headers={"Content-Type": "application/json"},
-                timeout=60,
-            )
-        else:
-            resp = requests.post(url, json=scenario["payload"], timeout=60)
+        resp = _post(url, scenario["payload"])
         try:
             data = resp.json()
         except Exception:
@@ -234,21 +243,29 @@ def fire_scenario(name: str) -> dict:
         return data
     except requests.ConnectionError:
         print(f"  ERROR: Cannot connect to {BACKEND}. Is the backend running?")
-        print(f"  Try: docker-compose up -d")
+        print("  Try: docker compose up -d")
         sys.exit(1)
 
 
 def main():
-    global BACKEND
+    global BACKEND, TOKEN
     parser = argparse.ArgumentParser(description="Seed demo security findings into SentinelForge")
     parser.add_argument("--scenario", "-s", choices=list(SCENARIOS.keys()), help="Scenario to fire")
     parser.add_argument("--all", action="store_true", help="Fire all scenarios in sequence")
-    parser.add_argument("--storm", type=int, metavar="N", nargs="?", const=25,
-                        help="Fire N near-identical alerts to demo correlation/dedup (default 25)")
+    parser.add_argument(
+        "--storm",
+        type=int,
+        metavar="N",
+        nargs="?",
+        const=25,
+        help="Fire N near-identical alerts to demo correlation/dedup (default 25)",
+    )
     parser.add_argument("--backend", default=BACKEND, help="Backend URL")
+    parser.add_argument("--token", default=TOKEN, help="Bearer token (or SENTINELFORGE_TOKEN)")
     args = parser.parse_args()
 
-    BACKEND = args.backend
+    BACKEND = args.backend.rstrip("/")
+    TOKEN = args.token
 
     if args.storm is not None:
         fire_storm(args.storm)
