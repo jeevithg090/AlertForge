@@ -41,27 +41,48 @@ services:
       dockerfile: Dockerfile
     command: ["python", "-m", "app.utils.mock_elasticsearch"]
     environment: &backend_env
+      # Service addresses inside the compose network.
       DATABASE_URL: postgresql://sentinelforge:sentinelforge@postgres:5432/sentinelforge
       REDIS_URL: redis://redis:6379/0
-      QWEN_BASE_URL: ${QWEN_BASE_URL:-https://api.groq.com/openai/v1}
-      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY}
-      QWEN_MODEL_MAX: ${QWEN_MODEL_MAX:-llama-3.3-70b-versatile}
-      QWEN_MODEL_PLUS: ${QWEN_MODEL_PLUS:-llama-3.3-70b-versatile}
-      QWEN_MODEL_FLASH: ${QWEN_MODEL_FLASH:-llama-3.1-8b-instant}
-      QWEN_EMBEDDING_MODEL: ${QWEN_EMBEDDING_MODEL:-text-embedding-v4}
-      USE_MOCK_TOOLS: ${USE_MOCK_TOOLS:-true}
       ELASTICSEARCH_URL: http://mock-elasticsearch:9200
+      RUNBOOK_MCP_SSE_URL: http://mcp-server:8001/sse
+      JIRA_MCP_SSE_URL: http://mcp-server:8001/sse
+      RUNBOOKS_DIR: /runbooks
+      CHROMA_DIR: /app/.chroma
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      BACKEND_URL: ${BACKEND_URL:-http://localhost:8000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      # LLM provider (blank key => deterministic mocks). Values come from ./.env.
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.groq.com/openai/v1}
+      LLM_PROVIDER: ${LLM_PROVIDER:-groq}
+      LLM_MODEL_SMART: ${LLM_MODEL_SMART:-llama-3.3-70b-versatile}
+      LLM_MODEL_FAST: ${LLM_MODEL_FAST:-llama-3.1-8b-instant}
+      LLM_MODEL_REASONING: ${LLM_MODEL_REASONING:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-all-MiniLM-L6-v2}
+      # External tools (blank => mock)
+      USE_MOCK_TOOLS: ${USE_MOCK_TOOLS:-true}
       VIRUSTOTAL_API_KEY: ${VIRUSTOTAL_API_KEY:-}
       ABUSEIPDB_API_KEY: ${ABUSEIPDB_API_KEY:-}
       SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
       SLACK_CHANNEL_ID: ${SLACK_CHANNEL_ID:-}
-      RUNBOOK_MCP_SSE_URL: http://mcp-server:8001/sse
-      JIRA_MCP_SSE_URL: http://mcp-server:8001/sse
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+      CLOUDFLARE_ZONE_ID: ${CLOUDFLARE_ZONE_ID:-}
+      # Security
       SECRET_KEY: ${SECRET_KEY:-dev-secret-change-me}
+      DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:-changeme-admin}
+      AUTH_DEV_BYPASS: ${AUTH_DEV_BYPASS:-true}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      FRONTEND_URL: http://localhost:3000
-      BACKEND_URL: http://localhost:8000
+      # Correlation + action guardrails
+      CORRELATION_ENABLED: ${CORRELATION_ENABLED:-true}
+      CORRELATION_WINDOW_SECONDS: ${CORRELATION_WINDOW_SECONDS:-1800}
+      ACTION_DRY_RUN_ONLY: ${ACTION_DRY_RUN_ONLY:-true}
+      ACTION_KILL_SWITCH: ${ACTION_KILL_SWITCH:-false}
+      ACTION_PROTECTED_IP_CIDRS: ${ACTION_PROTECTED_IP_CIDRS:-}
+      ACTION_PROTECTED_USERS: ${ACTION_PROTECTED_USERS:-}
+      ACTION_PROTECTED_HOSTS: ${ACTION_PROTECTED_HOSTS:-}
+      ACTION_TWO_PERSON_SEVERITIES: ${ACTION_TWO_PERSON_SEVERITIES:-P1_CRITICAL}
       AUTO_APPROVE_TIMEOUT_P4: ${AUTO_APPROVE_TIMEOUT_P4:-5}
       AUTO_APPROVE_TIMEOUT_P3: ${AUTO_APPROVE_TIMEOUT_P3:-15}
       AUTO_APPROVE_TIMEOUT_P2: ${AUTO_APPROVE_TIMEOUT_P2:-2}
@@ -85,7 +106,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    command: ["sh", "-c", "alembic upgrade head && python -m app.services.runbook_indexer || true && python -m app.main"]
+    # Migrate (fail hard), index runbooks (best effort), then serve.
+    command: ["sh", "-c", "alembic upgrade head && (python -m app.services.runbook_indexer || true) && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
     environment:
       <<: *backend_env
     depends_on:
@@ -96,8 +118,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./backend:/app
-      - ./runbooks:/runbooks
+      - ./runbooks:/runbooks:ro
       - chromadata:/app/.chroma
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/v1/health',timeout=3).status==200 else 1)\""]
@@ -119,14 +140,13 @@ services:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
     volumes:
-      - ./backend:/app
-      - ./runbooks:/runbooks
+      - ./runbooks:/runbooks:ro
       - chromadata:/app/.chroma
     restart: unless-stopped
 
   prometheus:
     profiles: ["observability"]
-    image: prom/prometheus:latest
+    image: prom/prometheus:v2.55.1
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
@@ -141,10 +161,10 @@ services:
 
   grafana:
     profiles: ["observability"]
-    image: grafana/grafana:latest
+    image: grafana/grafana:11.3.0
     environment:
       GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: sentinelforge
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-sentinelforge}
       GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/provisioning/dashboards/sentinelforge.json
     volumes:
       - ./observability/grafana/datasources:/etc/grafana/provisioning/datasources
@@ -169,10 +189,6 @@ services:
       backend: { condition: service_healthy }
     ports:
       - "3000:3000"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - /app/.next
     restart: unless-stopped
 
 volumes:
