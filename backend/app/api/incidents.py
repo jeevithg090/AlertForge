@@ -2,15 +2,19 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app.config import settings
 from app.db import incidents as incidents_db
+from app.services.auth import ANALYST_ROLES, operator_id, require_role
 
 router = APIRouter()
+
+_analyst = Depends(require_role(*ANALYST_ROLES))
 
 
 def _as_dict(value: Any) -> dict:
@@ -68,7 +72,7 @@ async def get_thinking(incident_id: str) -> dict:
     return {"incident_id": incident_id, "thinking_trace": triage.get("thinking_trace")}
 
 
-@router.post("/{incident_id}/hunt")
+@router.post("/{incident_id}/hunt", dependencies=[_analyst])
 async def generate_incident_hunt(incident_id: str) -> dict:
     """Generate proactive threat-hunt hypotheses from this incident's ATT&CK
     techniques + entities, and stream a ``hunt.generated`` event to the war room."""
@@ -93,9 +97,7 @@ async def generate_incident_hunt(incident_id: str) -> dict:
         "root_cause_category": triage.get("root_cause_category"),
         "entities": _as_dict(row.get("correlated_entities")),
     }
-    plan = await generate_hunt_plan(
-        seed=incident_id, technique_ids=techniques, context=context
-    )
+    plan = await generate_hunt_plan(seed=incident_id, technique_ids=techniques, context=context)
     await publish_event(
         incident_id,
         make_event(
@@ -137,7 +139,19 @@ async def get_events(incident_id: str, limit: int = Query(500, le=1000)) -> dict
     return {"incident_id": incident_id, "events": events, "count": len(events)}
 
 
-@router.post("/{incident_id}/detection-rule")
+def detection_rule_path(incident_id: str, technique: str) -> tuple[str, str]:
+    """Return (relative_path, absolute_path) for a generated Sigma rule.
+
+    The technique comes from model-refined output, so it is reduced to a safe
+    filename component before being joined onto the detections directory.
+    """
+    safe_technique = re.sub(r"[^A-Za-z0-9._-]", "_", technique).strip("._") or "unknown"
+    filename = f"{incident_id[:8]}_{safe_technique}.yaml"
+    rel_path = os.path.join(settings.detections_dir, filename)
+    return rel_path, os.path.abspath(rel_path)
+
+
+@router.post("/{incident_id}/detection-rule", dependencies=[_analyst])
 async def generate_detection_rule(incident_id: str) -> dict:
     """Generate a Sigma detection rule from this incident's IOCs + MITRE
     techniques. Returns the rule dict, YAML string, and relative file path."""
@@ -152,12 +166,9 @@ async def generate_detection_rule(incident_id: str) -> dict:
 
     rule, yaml_str = await _generate(row)
     technique = rule.get("tags", ["attack.unknown"])[-1].replace("attack.", "")
-    rel_path = os.path.join(settings.detections_dir, f"{incident_id[:8]}_{technique}.yaml")
-
-    detections_abs = os.path.join(os.path.dirname(settings.detections_dir) or ".", settings.detections_dir)
-    os.makedirs(detections_abs, exist_ok=True)
-    full_path = os.path.join(detections_abs, f"{incident_id[:8]}_{technique}.yaml")
-    with open(full_path, "w") as f:  # noqa: ASYNC230
+    rel_path, full_path = detection_rule_path(incident_id, technique)
+    os.makedirs(os.path.dirname(full_path), exist_ok=True)  # noqa: ASYNC240
+    with open(full_path, "w", encoding="utf-8") as f:  # noqa: ASYNC230
         f.write(yaml_str)
 
     await write_audit(
@@ -168,7 +179,9 @@ async def generate_detection_rule(incident_id: str) -> dict:
     )
     await publish_event(
         incident_id,
-        make_event(EventType.DETECTION_RULE_GENERATED, incident_id, technique=technique, path=rel_path),
+        make_event(
+            EventType.DETECTION_RULE_GENERATED, incident_id, technique=technique, path=rel_path
+        ),
     )
     return {"rule": rule, "yaml": yaml_str, "path": rel_path}
 
@@ -184,8 +197,11 @@ async def export_stix(incident_id: str) -> Any:
         raise HTTPException(status_code=404, detail="incident not found")
     bundle = build_stix_bundle(row)
     filename = f"incident-{incident_id[:8]}.stix.json"
-    return JSONResponse(content=bundle, media_type="application/json",
-                        headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+    return JSONResponse(
+        content=bundle,
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 class FeedbackBody(BaseModel):
@@ -195,13 +211,22 @@ class FeedbackBody(BaseModel):
 
 
 @router.post("/{incident_id}/feedback")
-async def submit_feedback(incident_id: str, body: FeedbackBody) -> dict:
+async def submit_feedback(
+    incident_id: str,
+    body: FeedbackBody,
+    operator: dict = Depends(require_role(*ANALYST_ROLES)),
+) -> dict:
     from app.db.audit import write_audit
     from app.db.connection import execute as db_execute
     from app.schemas.events import EventType, make_event
     from app.services.redis_client import publish_event
 
-    if body.human_verdict not in ("TRUE_POSITIVE", "FALSE_POSITIVE", "BENIGN_ANOMALY", "NEEDS_HUMAN"):
+    if body.human_verdict not in (
+        "TRUE_POSITIVE",
+        "FALSE_POSITIVE",
+        "BENIGN_ANOMALY",
+        "NEEDS_HUMAN",
+    ):
         raise HTTPException(status_code=422, detail="invalid verdict")
 
     row = await incidents_db.get_incident(incident_id)
@@ -212,7 +237,7 @@ async def submit_feedback(incident_id: str, body: FeedbackBody) -> dict:
     ai_verdict = triage.get("verdict") if isinstance(triage, dict) else None
     ai_severity = row.get("severity")
 
-    given_by = "analyst:anonymous"
+    given_by = operator_id(operator)
 
     await db_execute(
         """
@@ -225,8 +250,13 @@ async def submit_feedback(incident_id: str, body: FeedbackBody) -> dict:
             note = EXCLUDED.note,
             created_at = NOW()
         """,
-        incident_id, given_by, ai_verdict, body.human_verdict,
-        ai_severity, body.human_severity, body.note,
+        incident_id,
+        given_by,
+        ai_verdict,
+        body.human_verdict,
+        ai_severity,
+        body.human_severity,
+        body.note,
     )
 
     await write_audit(
@@ -237,7 +267,11 @@ async def submit_feedback(incident_id: str, body: FeedbackBody) -> dict:
     )
     await publish_event(
         incident_id,
-        make_event(EventType.FEEDBACK_RECEIVED, incident_id,
-                   human_verdict=body.human_verdict, given_by=given_by),
+        make_event(
+            EventType.FEEDBACK_RECEIVED,
+            incident_id,
+            human_verdict=body.human_verdict,
+            given_by=given_by,
+        ),
     )
     return {"status": "recorded"}

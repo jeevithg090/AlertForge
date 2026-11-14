@@ -9,6 +9,7 @@ publishes to the ``alerts:raw`` Redis stream for the Triage Agent.
 Every webhook endpoint verifies an HMAC signature when ``settings.secret_key``
 is non-default, so unauthenticated alert injection is rejected at the edge.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -34,8 +35,10 @@ from app.services.redis_client import publish_event, publish_to_stream
 
 logger = logging.getLogger("sentinelforge.ingestion")
 
-def SECRET_CONFIGURED() -> bool:
-    return bool(settings.secret_key) and settings.secret_key != "dev-secret-change-me"
+
+def secret_configured() -> bool:
+    return settings.webhook_secret_configured
+
 
 NORMALIZER_SYSTEM = """\
 You are a security finding ingestion normalizer. Given a raw security alert
@@ -91,7 +94,7 @@ def verify_hmac(raw_body: bytes, signature_header: str | None) -> tuple[bool, st
     all traffic (dev/lab mode) and log a warning. When a secret IS configured
     but the header is missing/invalid we reject the request.
     """
-    if not SECRET_CONFIGURED():
+    if not secret_configured():
         return True, "no_secret_configured"
     if not signature_header:
         return False, "missing_signature"
@@ -137,8 +140,18 @@ async def normalize(raw: str, source_hint: str = "generic") -> IncidentSignal:
 
 
 SVC_KEYWORDS = (
-    "checkout", "cart", "api-gateway", "prod-db", "checkout-service", "payment",
-    "auth", "bastion", "k8s-worker", "vpn", "vpn-gateway", "vpn-server",
+    "checkout",
+    "cart",
+    "api-gateway",
+    "prod-db",
+    "checkout-service",
+    "payment",
+    "auth",
+    "bastion",
+    "k8s-worker",
+    "vpn",
+    "vpn-gateway",
+    "vpn-server",
 )
 
 
@@ -158,7 +171,20 @@ def _heuristic_normalize(raw: str, hint: AlertSource, signal_id: str) -> Inciden
     ips: list[str] = []
     for m in re.finditer(r"\b(\d{1,3}\.){3}\d{1,3}\b", raw):
         ip = m.group(0)
-        if ip.startswith(("10.", "172.16.", "172.17.", "172.18.", "172.19.", "172.2", "172.30.", "172.31.", "192.168.", "127.")):
+        if ip.startswith(
+            (
+                "10.",
+                "172.16.",
+                "172.17.",
+                "172.18.",
+                "172.19.",
+                "172.2",
+                "172.30.",
+                "172.31.",
+                "192.168.",
+                "127.",
+            )
+        ):
             continue
         if ip not in ips:
             ips.append(ip)
@@ -254,7 +280,10 @@ async def ingest_raw(raw: str, source_hint: str = "generic") -> dict[str, Any]:
             )
             logger.info(
                 "alert %s correlated into incident %s (%s; count=%s)",
-                signal.signal_id, incident_id, reason, alert_count,
+                signal.signal_id,
+                incident_id,
+                reason,
+                alert_count,
             )
             return {
                 "accepted": True,
@@ -282,7 +311,9 @@ async def ingest_raw(raw: str, source_hint: str = "generic") -> dict[str, Any]:
     )
 
     # 4. Publish to pipeline + dashboard
-    await publish_to_stream("raw", {"incident_id": incident_id, "signal": signal.model_dump(mode="json")})
+    await publish_to_stream(
+        "raw", {"incident_id": incident_id, "signal": signal.model_dump(mode="json")}
+    )
     await publish_event(
         incident_id,
         make_event(

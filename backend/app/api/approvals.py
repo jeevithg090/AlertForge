@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from app.db import incidents as incidents_db
 from app.db.audit import write_audit
-from app.services.auth import require_role
+from app.services.auth import APPROVER_ROLES, operator_id, require_role
 from app.services.redis_client import publish_event
 
 router = APIRouter()
@@ -25,14 +25,28 @@ async def list_pending() -> dict:
 async def approve_step(
     step_id: str,
     decision: ApprovalDecision,
-    operator: dict = Depends(require_role("approver", "admin")),
+    operator: dict = Depends(require_role(*APPROVER_ROLES)),
 ) -> dict:
-    approver = operator["sub"]
+    approver = operator_id(operator)
     step = await incidents_db.get_step(step_id)
     if not step:
         raise HTTPException(status_code=404, detail="step not found")
     if step["status"] != "AWAITING_APPROVAL":
-        raise HTTPException(status_code=409, detail=f"step is {step['status']}, not awaiting approval")
+        raise HTTPException(
+            status_code=409, detail=f"step is {step['status']}, not awaiting approval"
+        )
+
+    # A step that already carries an approval was sent back by the guardrails
+    # because it needs a second, distinct approver (two-person rule). Record
+    # this decision as that second approval instead of overwriting the first.
+    first_approver = step.get("approved_by")
+    if first_approver:
+        if first_approver == approver:
+            raise HTTPException(
+                status_code=409,
+                detail="already approved by you; a second, distinct approver is required",
+            )
+        return await second_approve(step_id, decision, operator)
 
     # Atomic compare-and-set to prevent the two-operators-approve-same-step race.
     claimed = await incidents_db.cas_update_step(
@@ -57,8 +71,12 @@ async def approve_step(
     )
     await publish_event(
         step["incident_id"],
-        {"type": "approval.received", "step_id": step_id, "decision": "approved",
-         "approver": approver},
+        {
+            "type": "approval.received",
+            "step_id": step_id,
+            "decision": "approved",
+            "approver": approver,
+        },
     )
     # Nudge the execution agent to resume
     from app.services.redis_client import publish_to_stream
@@ -71,9 +89,9 @@ async def approve_step(
 async def reject_step(
     step_id: str,
     decision: ApprovalDecision,
-    operator: dict = Depends(require_role("approver", "admin")),
+    operator: dict = Depends(require_role(*APPROVER_ROLES)),
 ) -> dict:
-    approver = operator["sub"]
+    approver = operator_id(operator)
     step = await incidents_db.get_step(step_id)
     if not step:
         raise HTTPException(status_code=404, detail="step not found")
@@ -95,8 +113,12 @@ async def reject_step(
     )
     await publish_event(
         step["incident_id"],
-        {"type": "approval.received", "step_id": step_id, "decision": "rejected",
-         "approver": approver},
+        {
+            "type": "approval.received",
+            "step_id": step_id,
+            "decision": "rejected",
+            "approver": approver,
+        },
     )
     return {"step_id": step_id, "status": "REJECTED"}
 
@@ -105,9 +127,9 @@ async def reject_step(
 async def escalate_step(
     step_id: str,
     decision: ApprovalDecision,
-    operator: dict = Depends(require_role("approver", "admin")),
+    operator: dict = Depends(require_role(*APPROVER_ROLES)),
 ) -> dict:
-    approver = operator["sub"]
+    approver = operator_id(operator)
     step = await incidents_db.get_step(step_id)
     if not step:
         raise HTTPException(status_code=404, detail="step not found")
@@ -129,8 +151,12 @@ async def escalate_step(
     )
     await publish_event(
         step["incident_id"],
-        {"type": "approval.received", "step_id": step_id, "decision": "escalated",
-         "approver": approver},
+        {
+            "type": "approval.received",
+            "step_id": step_id,
+            "decision": "escalated",
+            "approver": approver,
+        },
     )
     return {"step_id": step_id, "status": "ESCALATED"}
 
@@ -139,14 +165,16 @@ async def escalate_step(
 async def second_approve(
     step_id: str,
     decision: ApprovalDecision,
-    operator: dict = Depends(require_role("approver", "admin")),
+    operator: dict = Depends(require_role(*APPROVER_ROLES)),
 ) -> dict:
-    approver = operator["sub"]
+    approver = operator_id(operator)
     step = await incidents_db.get_step(step_id)
     if not step:
         raise HTTPException(status_code=404, detail="step not found")
     if step["status"] != "AWAITING_APPROVAL":
-        raise HTTPException(status_code=409, detail=f"step is {step['status']}, not awaiting approval")
+        raise HTTPException(
+            status_code=409, detail=f"step is {step['status']}, not awaiting approval"
+        )
     if step.get("approved_by") == approver:
         raise HTTPException(status_code=409, detail="cannot second-approve your own approval")
     if step.get("second_approver"):
@@ -177,8 +205,13 @@ async def second_approve(
     )
     await publish_event(
         step["incident_id"],
-        {"type": "approval.received", "step_id": step_id, "decision": "approved",
-         "approver": approver, "second_approver": True},
+        {
+            "type": "approval.received",
+            "step_id": step_id,
+            "decision": "approved",
+            "approver": approver,
+            "second_approver": True,
+        },
     )
     from app.services.redis_client import publish_to_stream
 

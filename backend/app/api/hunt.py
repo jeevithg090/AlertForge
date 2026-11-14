@@ -5,6 +5,7 @@ with runnable queries — usable standalone (hunt of the week) or wired to an
 incident's techniques. The incident-scoped variant lives on the incidents
 router (``POST /api/v1/incidents/{id}/hunt``).
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter
