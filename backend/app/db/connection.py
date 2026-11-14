@@ -25,9 +25,7 @@ async def init_db() -> None:
     logger.info("asyncpg pool created")
     # ensure gen_random_uuid exists (pgcrypto)
     async with _pool.acquire() as conn:
-        await conn.execute(
-            "CREATE EXTENSION IF NOT EXISTS pgcrypto"
-        )
+        await conn.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
 
 
 async def close_db() -> None:

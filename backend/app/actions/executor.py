@@ -8,6 +8,7 @@ override it. Execution is idempotent (by ``idempotency_key``) and every state
 transition is auditable via an injected callback (so the executor has no hard DB
 dependency and is unit-testable in isolation).
 """
+
 from __future__ import annotations
 
 import logging
@@ -44,9 +45,9 @@ class ActionExecutor:
         self._adapters: dict[str, ActionAdapter] = {a.action_type: a for a in adapters}
         self._audit = audit
         self._window_seconds = window_seconds
-        self._window: deque[float] = deque()          # timestamps of executed mutating actions
-        self._incident_counts: dict[str, int] = {}     # incident_id -> executed mutating count
-        self._executed_keys: set[str] = set()          # idempotency keys already executed
+        self._window: deque[float] = deque()  # timestamps of executed mutating actions
+        self._incident_counts: dict[str, int] = {}  # incident_id -> executed mutating count
+        self._executed_keys: set[str] = set()  # idempotency keys already executed
 
     # ---- authorization (pure decision + live counters) ---- #
 
@@ -58,14 +59,14 @@ class ActionExecutor:
             approvers=tuple(dict.fromkeys(a for a in approvers if a)),  # distinct, order-preserving
         )
 
-    def authorize(self, request: ActionRequest, approvers: tuple[str, ...] = ()) -> GuardrailDecision:
+    def authorize(
+        self, request: ActionRequest, approvers: tuple[str, ...] = ()
+    ) -> GuardrailDecision:
         return evaluate(self.policy, request, self.build_context(request, approvers))
 
     # ---- full lifecycle ---- #
 
-    async def run(
-        self, request: ActionRequest, *, approvers: tuple[str, ...] = ()
-    ) -> ActionResult:
+    async def run(self, request: ActionRequest, *, approvers: tuple[str, ...] = ()) -> ActionResult:
         ctx = self.build_context(request, approvers)
         decision = evaluate(self.policy, request, ctx)
 
@@ -78,13 +79,15 @@ class ActionExecutor:
         # 2. Approval sufficiency (a DENY above already short-circuited).
         if decision.needs_human and len(ctx.approvers) < decision.approvers_required:
             return await self._finish(
-                ActionResult(ActionStatus.AWAITING_APPROVAL, request, decision), "action.awaiting_approval"
+                ActionResult(ActionStatus.AWAITING_APPROVAL, request, decision),
+                "action.awaiting_approval",
             )
 
         # 3. Idempotency.
         if request.idempotency_key in self._executed_keys:
             return await self._finish(
-                ActionResult(ActionStatus.SKIPPED_DUPLICATE, request, decision), "action.skipped_duplicate"
+                ActionResult(ActionStatus.SKIPPED_DUPLICATE, request, decision),
+                "action.skipped_duplicate",
             )
 
         adapter = self._adapters.get(request.action_type)
@@ -100,7 +103,9 @@ class ActionExecutor:
             planned = await adapter.dry_run(request)
         except Exception as exc:  # noqa: BLE001
             return await self._finish(
-                ActionResult(ActionStatus.FAILED, request, decision, error=f"preflight/dry-run: {exc}"),
+                ActionResult(
+                    ActionStatus.FAILED, request, decision, error=f"preflight/dry-run: {exc}"
+                ),
                 "action.failed",
             )
 
@@ -115,7 +120,13 @@ class ActionExecutor:
         if self.policy.dry_run_only:
             self._record(request)
             return await self._finish(
-                ActionResult(ActionStatus.DRY_RUN_OK, request, decision, effect=planned.details, evidence=evidence),
+                ActionResult(
+                    ActionStatus.DRY_RUN_OK,
+                    request,
+                    decision,
+                    effect=planned.details,
+                    evidence=evidence,
+                ),
                 "action.dry_run_ok",
             )
 
@@ -125,14 +136,18 @@ class ActionExecutor:
             ok = await adapter.verify(request, effect)
         except Exception as exc:  # noqa: BLE001
             return await self._finish(
-                ActionResult(ActionStatus.FAILED, request, decision, evidence=evidence, error=str(exc)),
+                ActionResult(
+                    ActionStatus.FAILED, request, decision, evidence=evidence, error=str(exc)
+                ),
                 "action.failed",
             )
 
         if ok:
             self._record(request)
             return await self._finish(
-                ActionResult(ActionStatus.VERIFIED, request, decision, effect=effect, evidence=evidence),
+                ActionResult(
+                    ActionStatus.VERIFIED, request, decision, effect=effect, evidence=evidence
+                ),
                 "action.verified",
             )
 
@@ -144,7 +159,11 @@ class ActionExecutor:
         return await self._finish(
             ActionResult(
                 ActionStatus.ROLLED_BACK if rolled_back else ActionStatus.FAILED,
-                request, decision, effect=effect, evidence=evidence, rolled_back=rolled_back,
+                request,
+                decision,
+                effect=effect,
+                evidence=evidence,
+                rolled_back=rolled_back,
                 error="verification failed",
             ),
             "action.rolled_back" if rolled_back else "action.failed",
@@ -154,7 +173,9 @@ class ActionExecutor:
 
     def _record(self, request: ActionRequest) -> None:
         self._executed_keys.add(request.idempotency_key)
-        self._incident_counts[request.incident_id] = self._incident_counts.get(request.incident_id, 0) + 1
+        self._incident_counts[request.incident_id] = (
+            self._incident_counts.get(request.incident_id, 0) + 1
+        )
         self._window.append(time.monotonic())
 
     def _expire_window(self) -> None:
@@ -168,7 +189,9 @@ class ActionExecutor:
         record_action(result.request.action_type, result.status.value)
         logger.info(
             "action %s %s target=%s decision=%s",
-            result.request.action_type, result.status.value, result.request.target,
+            result.request.action_type,
+            result.status.value,
+            result.request.target,
             result.decision.decision.value if result.decision else "?",
         )
         if self._audit is not None:

@@ -86,8 +86,12 @@ async def write_audit(
             prev = prev or GENESIS
             ts = datetime.now(timezone.utc)
             entry_hash = compute_entry_hash(
-                prev, actor=actor, action=action, incident_id=incident_id,
-                timestamp_iso=ts.isoformat(), details=details or {},
+                prev,
+                actor=actor,
+                action=action,
+                incident_id=incident_id,
+                timestamp_iso=ts.isoformat(),
+                details=details or {},
             )
             await conn.execute(
                 """
@@ -97,9 +101,18 @@ async def write_audit(
                      prev_hash, entry_hash)
                 VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12)
                 """,
-                incident_id, ts, actor, action, json.dumps(details or {}, default=str),
-                ip_address, qwen_model, qwen_input_tokens, qwen_output_tokens,
-                qwen_thinking_tokens, prev, entry_hash,
+                incident_id,
+                ts,
+                actor,
+                action,
+                json.dumps(details or {}, default=str),
+                ip_address,
+                qwen_model,
+                qwen_input_tokens,
+                qwen_output_tokens,
+                qwen_thinking_tokens,
+                prev,
+                entry_hash,
             )
     except Exception as exc:
         logger.warning("audit write failed (%s): %s", action, exc)
@@ -119,10 +132,14 @@ async def verify_audit_chain() -> dict[str, Any]:
         {
             "seq": r["seq"],
             "incident_id": str(r["incident_id"]) if r["incident_id"] else None,
-            "timestamp": r["timestamp"].isoformat() if isinstance(r["timestamp"], datetime) else r["timestamp"],
+            "timestamp": r["timestamp"].isoformat()
+            if isinstance(r["timestamp"], datetime)
+            else r["timestamp"],
             "actor": r["actor"],
             "action": r["action"],
-            "details": json.loads(r["details"]) if isinstance(r["details"], str) else (r["details"] or {}),
+            "details": json.loads(r["details"])
+            if isinstance(r["details"], str)
+            else (r["details"] or {}),
             "prev_hash": r["prev_hash"],
             "entry_hash": r["entry_hash"],
         }

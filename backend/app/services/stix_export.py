@@ -126,7 +126,9 @@ def build_stix_bundle(incident: dict) -> dict:
         "created": now,
         "modified": now,
         "name": incident.get("alert_message", "SentinelForge Incident")[:256],
-        "published": incident.get("created_at", now) if isinstance(incident.get("created_at"), str) else now,
+        "published": incident.get("created_at", now)
+        if isinstance(incident.get("created_at"), str)
+        else now,
         "object_refs": object_refs,
     }
     objects.insert(0, report)
@@ -145,11 +147,13 @@ def build_navigator_layer(technique_counts: list[dict]) -> dict:
 
     techniques = []
     for t in technique_counts:
-        techniques.append({
-            "techniqueID": t.get("technique_id", ""),
-            "score": int(t.get("count", 0)),
-            "comment": t.get("name", ""),
-        })
+        techniques.append(
+            {
+                "techniqueID": t.get("technique_id", ""),
+                "score": int(t.get("count", 0)),
+                "comment": t.get("name", ""),
+            }
+        )
 
     return {
         "name": "SentinelForge observed techniques",

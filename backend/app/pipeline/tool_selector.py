@@ -10,6 +10,7 @@ Containment tools (block_ip / suspend_account / isolate_host / rotate_credential
 are intentionally never selected here — those run only in the Execution Agent
 after the human-in-the-loop gate, never during read-only investigation.
 """
+
 from __future__ import annotations
 
 # Always-useful investigative starting points.
@@ -17,26 +18,44 @@ CORE_TOOLS = ["search_runbook", "query_siem_auth_logs", "query_elasticsearch"]
 
 # MITRE technique / category → additional tools worth calling.
 _TECHNIQUE_TOOLS: list[tuple[frozenset[str], tuple[str, ...]]] = [
-    (frozenset({"T1110", "T1078", "T1621", "T1556"}),  # credential access
-     ("query_siem_auth_logs", "enrich_user_identity", "lookup_ip_reputation")),
-    (frozenset({"T1486", "T1059", "T1204", "T1055", "T1027"}),  # execution / malware
-     ("query_edr_endpoint", "search_runbook")),
-    (frozenset({"T1041", "T1048", "T1567", "T1030"}),  # exfiltration
-     ("query_elasticsearch", "lookup_ip_reputation", "get_service_dependencies")),
-    (frozenset({"T1190", "T1203", "T1211", "T1505"}),  # exploit public app
-     ("search_cve_database", "query_elasticsearch", "get_recent_deployments")),
-    (frozenset({"T1021", "T1210", "T1570", "T1550"}),  # lateral movement
-     ("query_edr_endpoint", "enrich_user_identity", "get_kubernetes_pod_status")),
-    (frozenset({"T1595", "T1046", "T1590", "T1592"}),  # reconnaissance
-     ("lookup_ip_reputation", "query_elasticsearch")),
-    (frozenset({"T1071", "T1572", "T1090", "T1568"}),  # command & control / network
-     ("lookup_ip_reputation", "check_firewall_rules")),
+    (
+        frozenset({"T1110", "T1078", "T1621", "T1556"}),  # credential access
+        ("query_siem_auth_logs", "enrich_user_identity", "lookup_ip_reputation"),
+    ),
+    (
+        frozenset({"T1486", "T1059", "T1204", "T1055", "T1027"}),  # execution / malware
+        ("query_edr_endpoint", "search_runbook"),
+    ),
+    (
+        frozenset({"T1041", "T1048", "T1567", "T1030"}),  # exfiltration
+        ("query_elasticsearch", "lookup_ip_reputation", "get_service_dependencies"),
+    ),
+    (
+        frozenset({"T1190", "T1203", "T1211", "T1505"}),  # exploit public app
+        ("search_cve_database", "query_elasticsearch", "get_recent_deployments"),
+    ),
+    (
+        frozenset({"T1021", "T1210", "T1570", "T1550"}),  # lateral movement
+        ("query_edr_endpoint", "enrich_user_identity", "get_kubernetes_pod_status"),
+    ),
+    (
+        frozenset({"T1595", "T1046", "T1590", "T1592"}),  # reconnaissance
+        ("lookup_ip_reputation", "query_elasticsearch"),
+    ),
+    (
+        frozenset({"T1071", "T1572", "T1090", "T1568"}),  # command & control / network
+        ("lookup_ip_reputation", "check_firewall_rules"),
+    ),
 ]
 
 _CATEGORY_TOOLS: dict[str, tuple[str, ...]] = {
     "CREDENTIAL_ABUSE": ("query_siem_auth_logs", "enrich_user_identity", "lookup_ip_reputation"),
     "MALWARE": ("query_edr_endpoint", "search_runbook"),
-    "DATA_EXFILTRATION": ("query_elasticsearch", "lookup_ip_reputation", "get_service_dependencies"),
+    "DATA_EXFILTRATION": (
+        "query_elasticsearch",
+        "lookup_ip_reputation",
+        "get_service_dependencies",
+    ),
     "EXPLOIT": ("search_cve_database", "query_elasticsearch", "get_recent_deployments"),
     "LATERAL_MOVEMENT": ("query_edr_endpoint", "enrich_user_identity", "get_kubernetes_pod_status"),
     "RECONNAISSANCE": ("lookup_ip_reputation", "query_elasticsearch"),

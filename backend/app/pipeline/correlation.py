@@ -17,6 +17,7 @@ Two alerts correlate when, within a time window, they either:
 Everything here is a pure function of its inputs so it is trivially testable;
 the time-window filtering and persistence live in the DB layer.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -26,15 +27,20 @@ from dataclasses import dataclass, field
 
 # Private/loopback/link-local ranges are not useful correlation keys.
 _PRIVATE_PREFIXES = (
-    "10.", "127.", "169.254.", "192.168.",
+    "10.",
+    "127.",
+    "169.254.",
+    "192.168.",
     *(f"172.{i}." for i in range(16, 32)),
 )
 _IP_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 _USER_RE = re.compile(r"\buser(?:name)?[=:\s]+([A-Za-z0-9._@\-]+)", re.IGNORECASE)
 # Tokens to strip so volatile details don't defeat de-duplication.
-_HEX_RE = re.compile(r"\b[0-9a-f]{6,}\b", re.IGNORECASE)   # hashes, request ids
-_NUM_RE = re.compile(r"\d+")                                 # counts, ports, times
-_UUID_RE = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.IGNORECASE)
+_HEX_RE = re.compile(r"\b[0-9a-f]{6,}\b", re.IGNORECASE)  # hashes, request ids
+_NUM_RE = re.compile(r"\d+")  # counts, ports, times
+_UUID_RE = re.compile(
+    r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.IGNORECASE
+)
 _WS_RE = re.compile(r"\s+")
 
 
@@ -138,7 +144,7 @@ def compute_fingerprint(signal: dict) -> str:
     fingerprint identically even if the model normalizes their wording
     differently. This is what makes correlation robust to LLM non-determinism.
     """
-    source = (signal.get("source") or "generic")
+    source = signal.get("source") or "generic"
     service = (signal.get("affected_service") or "unknown").strip().lower()
     raw = signal.get("raw_input") or signal.get("alert_message") or ""
     signature = normalize_signature(raw)

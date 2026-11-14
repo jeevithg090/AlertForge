@@ -9,6 +9,7 @@ All P1 steps require human.
 Timeout auto-approve for low severity if no human response (scheduled by the
 background sweeper in ``scheduled_auto_approve``).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -38,11 +39,10 @@ def requires_approval(step: RemediationStep | dict, incident_severity: str) -> b
     if s.risk_level == RemediationRisk.REQUIRES_APPROVAL:
         return True
     # HIGH risk on P2 still requires human; auto-approve only for P3/P4 + notification.
-    if s.risk_level == RemediationRisk.HIGH and sev in (
-        Severity.P1_CRITICAL.value, Severity.P2_HIGH.value,
-    ):
-        return True
-    return False
+    return bool(
+        s.risk_level == RemediationRisk.HIGH
+        and sev in (Severity.P1_CRITICAL.value, Severity.P2_HIGH.value)
+    )
 
 
 def auto_approvable(step: RemediationStep | dict, incident_severity: str) -> bool:
@@ -56,11 +56,10 @@ def auto_approvable(step: RemediationStep | dict, incident_severity: str) -> boo
         return True
     if s.action_type == "notification":
         return True
-    if s.risk_level == RemediationRisk.MEDIUM and sev in (
-        Severity.P3_MEDIUM.value, Severity.P4_LOW.value,
-    ):
-        return True
-    return False
+    return bool(
+        s.risk_level == RemediationRisk.MEDIUM
+        and sev in (Severity.P3_MEDIUM.value, Severity.P4_LOW.value)
+    )
 
 
 def timeout_auto_approve_minutes(severity: str) -> int | None:
@@ -199,6 +198,8 @@ async def scheduled_auto_approve(interval_seconds: int = 30) -> None:
                         timeout_minutes=timeout,
                     ),
                 )
-                await publish_to_stream("planned", {"incident_id": step["incident_id"], "resume": True})
+                await publish_to_stream(
+                    "planned", {"incident_id": step["incident_id"], "resume": True}
+                )
     finally:
         _SWEEPER_RUNNING = False

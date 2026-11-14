@@ -13,15 +13,14 @@ the 70B budget only where it changes the outcome. An optional dedicated
 *reasoning* model (e.g. deepseek-r1-distill on Groq) is used for the hardest
 triage calls when configured.
 """
+
 from __future__ import annotations
 
 from app.config import settings
 from app.schemas.incident import Severity
 
 # Tasks that never need 70B-class judgment — keep them on the fast tier.
-_FAST_TASKS = frozenset(
-    {"execution", "status_check", "normalization", "semantic_check", "dedup"}
-)
+_FAST_TASKS = frozenset({"execution", "status_check", "normalization", "semantic_check", "dedup"})
 _CRITICAL = frozenset({Severity.P1_CRITICAL.value, Severity.P2_HIGH.value})
 
 

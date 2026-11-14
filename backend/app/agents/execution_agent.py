@@ -9,6 +9,7 @@ accounts, domain controllers, …) are refused no matter what was approved.
 Non-mutating steps (notifications, out-of-band human actions) keep the simple
 tool/simulate path. Validation failures trigger rollback.
 """
+
 from __future__ import annotations
 
 import json
@@ -68,19 +69,32 @@ class ExecutionAgent(AgentPersona):
             await self.say(incident_id, f"Step {step_num}/{len(approved)}: {desc}")
             await publish_event(
                 incident_id,
-                make_event("step.executing", incident_id, step_id=sid, step_number=step_num, description=desc),
+                make_event(
+                    "step.executing",
+                    incident_id,
+                    step_id=sid,
+                    step_number=step_num,
+                    description=desc,
+                ),
             )
-            await incidents_db.update_step(sid, status="EXECUTING", executed_at=datetime.now(timezone.utc))
+            await incidents_db.update_step(
+                sid, status="EXECUTING", executed_at=datetime.now(timezone.utc)
+            )
 
             outcome, output = await self._apply_step(incident_id, incident or {}, step)
 
             if outcome == "OK":
                 await incidents_db.update_step(
-                    sid, status="SUCCESS",
+                    sid,
+                    status="SUCCESS",
                     execution_output=json.dumps(output, default=str)[:2000],
-                    validation_passed=True, completed_at=datetime.now(timezone.utc),
+                    validation_passed=True,
+                    completed_at=datetime.now(timezone.utc),
                 )
-                await publish_event(incident_id, make_event("step.complete", incident_id, step_id=sid, step_number=step_num))
+                await publish_event(
+                    incident_id,
+                    make_event("step.complete", incident_id, step_id=sid, step_number=step_num),
+                )
                 await self.say(incident_id, f"Step {step_num} ✓ complete.")
 
             elif outcome == "BLOCKED":
@@ -89,53 +103,89 @@ class ExecutionAgent(AgentPersona):
                 fully_resolved = False
                 reason = "; ".join(output.get("reasons", [])) or "policy denied"
                 await incidents_db.update_step(
-                    sid, status="BLOCKED",
-                    execution_output=json.dumps(output, default=str)[:2000], validation_passed=False,
+                    sid,
+                    status="BLOCKED",
+                    execution_output=json.dumps(output, default=str)[:2000],
+                    validation_passed=False,
                 )
                 await write_audit(
-                    incident_id=incident_id, actor="system:guardrails",
+                    incident_id=incident_id,
+                    actor="system:guardrails",
                     action="action.blocked_by_policy",
-                    details={"step_number": step_num, "rule": output.get("rule"), "reasons": output.get("reasons")},
+                    details={
+                        "step_number": step_num,
+                        "rule": output.get("rule"),
+                        "reasons": output.get("reasons"),
+                    },
                 )
                 await publish_event(
                     incident_id,
-                    make_event("step.blocked", incident_id, step_id=sid, step_number=step_num,
-                               rule=output.get("rule"), reason=reason),
+                    make_event(
+                        "step.blocked",
+                        incident_id,
+                        step_id=sid,
+                        step_number=step_num,
+                        rule=output.get("rule"),
+                        reason=reason,
+                    ),
                 )
-                await self.say(incident_id, f"Step {step_num} 🛡️ BLOCKED by guardrails: {reason}. Escalating for manual review.")
+                await self.say(
+                    incident_id,
+                    f"Step {step_num} 🛡️ BLOCKED by guardrails: {reason}. Escalating for manual review.",
+                )
 
             elif outcome == "PENDING":
                 # Needs more approval (e.g. two-person rule) — revert to awaiting.
                 fully_resolved = False
-                await incidents_db.update_step(sid, status="AWAITING_APPROVAL", validation_passed=None)
+                await incidents_db.update_step(
+                    sid, status="AWAITING_APPROVAL", validation_passed=None
+                )
                 await publish_event(
                     incident_id,
-                    make_event("approval.required", incident_id, step_id=sid, step_number=step_num,
-                               description=desc, action_type=step.get("action_type"),
-                               reason="; ".join(output.get("reasons", []))),
+                    make_event(
+                        "approval.required",
+                        incident_id,
+                        step_id=sid,
+                        step_number=step_num,
+                        description=desc,
+                        action_type=step.get("action_type"),
+                        reason="; ".join(output.get("reasons", [])),
+                    ),
                 )
                 await self.say(incident_id, f"Step {step_num} needs a second approver — holding.")
 
             else:  # FAILED
                 await incidents_db.update_step(
-                    sid, status="FAILED",
-                    execution_output=json.dumps(output, default=str)[:2000], validation_passed=False,
+                    sid,
+                    status="FAILED",
+                    execution_output=json.dumps(output, default=str)[:2000],
+                    validation_passed=False,
                 )
-                await publish_event(incident_id, make_event("step.failed", incident_id, step_id=sid, step_number=step_num))
+                await publish_event(
+                    incident_id,
+                    make_event("step.failed", incident_id, step_id=sid, step_number=step_num),
+                )
                 await self.say(incident_id, f"Step {step_num} ✗ failed. Attempting rollback...")
                 if await self._rollback_step(step):
                     await incidents_db.update_step(sid, was_rolled_back=True)
-                    await publish_event(incident_id, make_event("rollback.triggered", incident_id, step_id=sid))
+                    await publish_event(
+                        incident_id, make_event("rollback.triggered", incident_id, step_id=sid)
+                    )
                 return False  # a genuine execution failure aborts the run
 
         await write_audit(
-            incident_id=incident_id, actor="system:execution_agent", action="execution.complete",
+            incident_id=incident_id,
+            actor="system:execution_agent",
+            action="execution.complete",
             details={"steps_executed": len(approved), "fully_resolved": fully_resolved},
         )
         if fully_resolved:
             await self.say(incident_id, f"All {len(approved)} steps executed. Incident resolved.")
         else:
-            await self.say(incident_id, "Execution finished; some steps were blocked or need a second approver — not auto-resolving.")
+            await self.say(
+                incident_id,
+                "Execution finished; some steps were blocked or need a second approver — not auto-resolving.",
+            )
         return fully_resolved
 
     async def _apply_step(self, incident_id: str, incident: dict, step: dict) -> tuple[str, dict]:
@@ -152,7 +202,10 @@ class ExecutionAgent(AgentPersona):
         if not is_mutating(action_type):
             output = await self._execute_tool_or_sim(step)
             failed = isinstance(output, dict) and output.get("error")
-            return ("FAILED" if failed else "OK", output if isinstance(output, dict) else {"result": output})
+            return (
+                "FAILED" if failed else "OK",
+                output if isinstance(output, dict) else {"result": output},
+            )
 
         # Mutating steps: route through the deterministic safety layer.
         req = ActionRequest(
@@ -174,17 +227,31 @@ class ExecutionAgent(AgentPersona):
         result = await get_executor().run(req, approvers=approvers)
 
         if result.status in (ActionStatus.DRY_RUN_OK, ActionStatus.VERIFIED):
-            return ("OK", {"status": result.status.value, "effect": result.effect, **result.evidence})
+            return (
+                "OK",
+                {"status": result.status.value, "effect": result.effect, **result.evidence},
+            )
         if result.status == ActionStatus.SKIPPED_DUPLICATE:
             return ("OK", {"status": result.status.value, "idempotent": True})
         if result.status == ActionStatus.DENIED:
             d = result.decision
-            return ("BLOCKED", {"blocked": True, "rule": d.matched_rule if d else None,
-                                "reasons": list(d.reasons) if d else []})
+            return (
+                "BLOCKED",
+                {
+                    "blocked": True,
+                    "rule": d.matched_rule if d else None,
+                    "reasons": list(d.reasons) if d else [],
+                },
+            )
         if result.status == ActionStatus.AWAITING_APPROVAL:
             d = result.decision
-            return ("PENDING", {"needs_approvers": d.approvers_required if d else 2,
-                                "reasons": list(d.reasons) if d else []})
+            return (
+                "PENDING",
+                {
+                    "needs_approvers": d.approvers_required if d else 2,
+                    "reasons": list(d.reasons) if d else [],
+                },
+            )
         return ("FAILED", {"error": result.error or "action failed", "evidence": result.evidence})
 
     async def _execute_tool_or_sim(self, step: dict) -> dict:
@@ -201,8 +268,16 @@ class ExecutionAgent(AgentPersona):
         resp = await llm.complete(
             model=settings.llm_model_fast,
             messages=[
-                {"role": "system", "content": "You are an execution agent. Simulate executing this step and return a JSON result."},
-                {"role": "user", "content": json.dumps({"step": step["description"], "action_type": step["action_type"]})},
+                {
+                    "role": "system",
+                    "content": "You are an execution agent. Simulate executing this step and return a JSON result.",
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {"step": step["description"], "action_type": step["action_type"]}
+                    ),
+                },
             ],
         )
         try:
@@ -214,8 +289,13 @@ class ExecutionAgent(AgentPersona):
         rollback = step.get("rollback_procedure")
         if not rollback:
             return False
-        await self.say(step.get("incident_id", ""), f"Rolling back step {step['step_number']}: {rollback[:80]}...")
+        await self.say(
+            step.get("incident_id", ""),
+            f"Rolling back step {step['step_number']}: {rollback[:80]}...",
+        )
         await incidents_db.update_step(
-            step["id"], rollback_output=f"Rollback executed: {rollback}", was_rolled_back=True,
+            step["id"],
+            rollback_output=f"Rollback executed: {rollback}",
+            was_rolled_back=True,
         )
         return True

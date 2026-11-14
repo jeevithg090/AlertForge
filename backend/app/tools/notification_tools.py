@@ -1,4 +1,5 @@
 """Notification tools — Slack + PagerDuty."""
+
 from __future__ import annotations
 
 import aiohttp
@@ -23,20 +24,35 @@ from app.tools.registry import tool
 async def send_slack_message(channel: str, message: str, severity: str = "info") -> dict:
     if settings.slack_bot_token and not settings.use_mock_tools:
         return await _real_slack(channel, message, severity)
-    return {"sent": True, "channel": channel, "message": message[:100], "severity": severity, "mock": True}
+    return {
+        "sent": True,
+        "channel": channel,
+        "message": message[:100],
+        "severity": severity,
+        "mock": True,
+    }
 
 
 async def _real_slack(channel, message, severity):
-    color = {"info": "#36a64f", "warning": "#FFB800", "critical": "#FF4444"}.get(severity, "#36a64f")
+    color = {"info": "#36a64f", "warning": "#FFB800", "critical": "#FF4444"}.get(
+        severity, "#36a64f"
+    )
     payload = {
         "channel": channel,
         "attachments": [{"color": color, "text": message, "mrkdwn_in": ["text"]}],
     }
-    headers = {"Authorization": f"Bearer {settings.slack_bot_token}", "Content-Type": "application/json"}
-    async with aiohttp.ClientSession() as session:
-        async with session.post("https://slack.com/api/chat.postMessage", json=payload, headers=headers) as resp:
-            data = await resp.json()
-            return {"sent": data.get("ok", False), "channel": channel, "ts": data.get("ts")}
+    headers = {
+        "Authorization": f"Bearer {settings.slack_bot_token}",
+        "Content-Type": "application/json",
+    }
+    async with (
+        aiohttp.ClientSession() as session,
+        session.post(
+            "https://slack.com/api/chat.postMessage", json=payload, headers=headers
+        ) as resp,
+    ):
+        data = await resp.json()
+        return {"sent": data.get("ok", False), "channel": channel, "ts": data.get("ts")}
 
 
 @tool(
@@ -53,7 +69,9 @@ async def _real_slack(channel, message, severity):
         "required": ["summary", "severity"],
     },
 )
-async def create_pagerduty_incident(summary: str, severity: str = "critical", service_id: str = "", incident_id: str = "") -> dict:
+async def create_pagerduty_incident(
+    summary: str, severity: str = "critical", service_id: str = "", incident_id: str = ""
+) -> dict:
     return {
         "created": True,
         "pagerduty_incident_key": f"PD-{incident_id[:8] if incident_id else 'mock'}",

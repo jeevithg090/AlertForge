@@ -1,4 +1,5 @@
 """Database status tool."""
+
 from __future__ import annotations
 
 import random
@@ -39,7 +40,15 @@ def _mock_db_status(host, include_slow):
     }
     if include_slow and active > 100:
         result["slow_queries"] = [
-            {"query": "SELECT * FROM orders WHERE status = 'pending' AND created_at > NOW() - INTERVAL '1 hour'", "duration_ms": random.randint(2000, 8000), "pid": random.randint(1000, 9999)},
-            {"query": "UPDATE inventory SET stock = stock - 1 WHERE product_id = $1", "duration_ms": random.randint(1500, 5000), "pid": random.randint(1000, 9999)},
+            {
+                "query": "SELECT * FROM orders WHERE status = 'pending' AND created_at > NOW() - INTERVAL '1 hour'",
+                "duration_ms": random.randint(2000, 8000),
+                "pid": random.randint(1000, 9999),
+            },
+            {
+                "query": "UPDATE inventory SET stock = stock - 1 WHERE product_id = $1",
+                "duration_ms": random.randint(1500, 5000),
+                "pid": random.randint(1000, 9999),
+            },
         ]
     return result

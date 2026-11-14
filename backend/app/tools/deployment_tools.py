@@ -1,4 +1,5 @@
 """Recent deployments tool."""
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -34,7 +35,11 @@ def _mock_deployments(environment, hours_back):
             "environment": environment,
             "commit": "a1b2c3d",
             "commit_message": "feat: add cart recommendation engine",
-            "files_changed": ["checkout/services/cart_service.py", "checkout/models/recommendation.py", "checkout/api/v2/cart.py"],
+            "files_changed": [
+                "checkout/services/cart_service.py",
+                "checkout/models/recommendation.py",
+                "checkout/api/v2/cart.py",
+            ],
             "status": "success",
         },
         {
@@ -62,4 +67,9 @@ def _mock_deployments(environment, hours_back):
             "status": "success",
         },
     ]
-    return {"environment": environment, "hours_back": hours_back, "deployments": deployments, "count": len(deployments)}
+    return {
+        "environment": environment,
+        "hours_back": hours_back,
+        "deployments": deployments,
+        "count": len(deployments),
+    }

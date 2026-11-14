@@ -12,6 +12,7 @@ when a model is available it is *seeded* with those templates and asked to
 refine/expand them rather than invent SIEM syntax from scratch — which is
 exactly where small models are weakest.
 """
+
 from __future__ import annotations
 
 import json
@@ -55,25 +56,31 @@ def _q(platform: str, query: str, description: str = "") -> HuntQuery:
 # Deterministic template library, keyed on base technique id.
 # --------------------------------------------------------------------------- #
 
+
 def _templates() -> dict[str, list[HuntHypothesis]]:
     return {
         "T1110": [  # Brute Force
             HuntHypothesis(
                 title="A brute-force attempt eventually succeeded from the same source",
                 rationale="Storms of failures often end in one success; the success is the real incident.",
-                mitre_technique_id="T1110", mitre_technique_name="Brute Force",
+                mitre_technique_id="T1110",
+                mitre_technique_name="Brute Force",
                 tactic="Credential Access",
                 data_sources=["authentication logs", "VPN/SSO logs"],
                 queries=[
-                    _q("spl",
-                       'index=auth (action=failure OR result=failed) src_ip=$SRC_IP '
-                       '| stats count by user | join user [search index=auth action=success src_ip=$SRC_IP] '
-                       '| where count > 20',
-                       "Failures followed by a success from the same source IP"),
-                    _q("sigma",
-                       "detection:\n  sel_fail: {EventID: 4625}\n  sel_ok: {EventID: 4624}\n  "
-                       "timeframe: 10m\n  condition: sel_fail | count() by IpAddress > 20 and sel_ok",
-                       "Windows 4625 spike then a 4624 from the same IP"),
+                    _q(
+                        "spl",
+                        "index=auth (action=failure OR result=failed) src_ip=$SRC_IP "
+                        "| stats count by user | join user [search index=auth action=success src_ip=$SRC_IP] "
+                        "| where count > 20",
+                        "Failures followed by a success from the same source IP",
+                    ),
+                    _q(
+                        "sigma",
+                        "detection:\n  sel_fail: {EventID: 4625}\n  sel_ok: {EventID: 4624}\n  "
+                        "timeframe: 10m\n  condition: sel_fail | count() by IpAddress > 20 and sel_ok",
+                        "Windows 4625 spike then a 4624 from the same IP",
+                    ),
                 ],
                 expected_findings="A successful auth from an IP with a preceding failure spike.",
                 false_positive_notes="Password-manager retries, expired-cert reconnects, load-balancer health checks.",
@@ -82,14 +89,17 @@ def _templates() -> dict[str, list[HuntHypothesis]]:
             HuntHypothesis(
                 title="The same source is spraying a few passwords across many accounts",
                 rationale="Password spraying evades lockouts by staying low-and-slow per account.",
-                mitre_technique_id="T1110.003", mitre_technique_name="Password Spraying",
+                mitre_technique_id="T1110.003",
+                mitre_technique_name="Password Spraying",
                 tactic="Credential Access",
                 data_sources=["authentication logs"],
                 queries=[
-                    _q("spl",
-                       'index=auth action=failure src_ip=$SRC_IP | stats dc(user) as users by src_ip '
-                       '| where users > 15',
-                       "One source failing against many distinct users"),
+                    _q(
+                        "spl",
+                        "index=auth action=failure src_ip=$SRC_IP | stats dc(user) as users by src_ip "
+                        "| where users > 15",
+                        "One source failing against many distinct users",
+                    ),
                 ],
                 expected_findings="A single IP failing auth against 15+ distinct accounts in a short window.",
                 false_positive_notes="Shared NAT egress, misconfigured service account.",
@@ -100,15 +110,18 @@ def _templates() -> dict[str, list[HuntHypothesis]]:
             HuntHypothesis(
                 title="A valid account is being used from an anomalous location or ASN",
                 rationale="Stolen creds show up as impossible travel or new geo/ASN for the user.",
-                mitre_technique_id="T1078", mitre_technique_name="Valid Accounts",
+                mitre_technique_id="T1078",
+                mitre_technique_name="Valid Accounts",
                 tactic="Defense Evasion",
                 data_sources=["SSO/IdP logs", "VPN logs"],
                 queries=[
-                    _q("kql",
-                       "SigninLogs | where UserPrincipalName == '$USER' "
-                       "| summarize by Location, IPAddress, bin(TimeGenerated, 1h) "
-                       "| where Location != '$HOME_GEO'",
-                       "Sign-ins for the user from an unexpected location"),
+                    _q(
+                        "kql",
+                        "SigninLogs | where UserPrincipalName == '$USER' "
+                        "| summarize by Location, IPAddress, bin(TimeGenerated, 1h) "
+                        "| where Location != '$HOME_GEO'",
+                        "Sign-ins for the user from an unexpected location",
+                    ),
                 ],
                 expected_findings="Successful sign-in from a geo/ASN the user has never used.",
                 false_positive_notes="Legitimate travel, corporate VPN egress, mobile carrier IP.",
@@ -119,18 +132,23 @@ def _templates() -> dict[str, list[HuntHypothesis]]:
             HuntHypothesis(
                 title="Encoded or suspicious PowerShell/shell executed post-alert",
                 rationale="LOLBins and encoded commands indicate hands-on-keyboard execution.",
-                mitre_technique_id="T1059.001", mitre_technique_name="PowerShell",
+                mitre_technique_id="T1059.001",
+                mitre_technique_name="PowerShell",
                 tactic="Execution",
                 data_sources=["EDR process events", "Windows Sysmon EventID 1"],
                 queries=[
-                    _q("eql",
-                       'process where process.name == "powershell.exe" and '
-                       'process.command_line : ("*-enc*", "*-EncodedCommand*", "*IEX*", "*DownloadString*")',
-                       "Encoded / download-cradle PowerShell"),
-                    _q("sigma",
-                       "detection:\n  sel: {Image|endswith: '\\\\powershell.exe', "
-                       "CommandLine|contains: ['-enc', 'FromBase64String', 'IEX']}\n  condition: sel",
-                       "Suspicious PowerShell command lines"),
+                    _q(
+                        "eql",
+                        'process where process.name == "powershell.exe" and '
+                        'process.command_line : ("*-enc*", "*-EncodedCommand*", "*IEX*", "*DownloadString*")',
+                        "Encoded / download-cradle PowerShell",
+                    ),
+                    _q(
+                        "sigma",
+                        "detection:\n  sel: {Image|endswith: '\\\\powershell.exe', "
+                        "CommandLine|contains: ['-enc', 'FromBase64String', 'IEX']}\n  condition: sel",
+                        "Suspicious PowerShell command lines",
+                    ),
                 ],
                 expected_findings="Process events with encoded commands or in-memory download cradles.",
                 false_positive_notes="Legit admin/automation scripts, SCCM, packaged installers.",
@@ -141,18 +159,23 @@ def _templates() -> dict[str, list[HuntHypothesis]]:
             HuntHypothesis(
                 title="Exploit attempt was followed by an outbound callback from the web host",
                 rationale="Successful RCE typically produces an egress connection the app never makes normally.",
-                mitre_technique_id="T1190", mitre_technique_name="Exploit Public-Facing Application",
+                mitre_technique_id="T1190",
+                mitre_technique_name="Exploit Public-Facing Application",
                 tactic="Initial Access",
                 data_sources=["web/proxy logs", "netflow", "EDR network events"],
                 queries=[
-                    _q("spl",
-                       'index=proxy src_host=$WEB_HOST | stats count by dest_ip dest_port '
-                       '| where NOT (dest_port IN (80,443)) OR dest_ip NOT IN ($KNOWN_EGRESS)',
-                       "Unusual egress from the web host after the exploit window"),
-                    _q("lucene",
-                       'host:$WEB_HOST AND (url:*.jsp OR url:*.php) AND http.response.status_code:200 '
-                       'AND http.request.method:POST',
-                       "Successful POSTs to script endpoints (possible webshell)"),
+                    _q(
+                        "spl",
+                        "index=proxy src_host=$WEB_HOST | stats count by dest_ip dest_port "
+                        "| where NOT (dest_port IN (80,443)) OR dest_ip NOT IN ($KNOWN_EGRESS)",
+                        "Unusual egress from the web host after the exploit window",
+                    ),
+                    _q(
+                        "lucene",
+                        "host:$WEB_HOST AND (url:*.jsp OR url:*.php) AND http.response.status_code:200 "
+                        "AND http.request.method:POST",
+                        "Successful POSTs to script endpoints (possible webshell)",
+                    ),
                 ],
                 expected_findings="New outbound connection or webshell interaction from the exposed host.",
                 false_positive_notes="Scheduled outbound integrations, package mirrors, CDN.",
@@ -163,15 +186,18 @@ def _templates() -> dict[str, list[HuntHypothesis]]:
             HuntHypothesis(
                 title="Beaconing to a low-reputation destination on a regular interval",
                 rationale="C2 channels beacon with tell-tale periodicity and small, uniform payloads.",
-                mitre_technique_id="T1071", mitre_technique_name="Application Layer Protocol",
+                mitre_technique_id="T1071",
+                mitre_technique_name="Application Layer Protocol",
                 tactic="Command and Control",
                 data_sources=["proxy logs", "netflow", "DNS logs"],
                 queries=[
-                    _q("spl",
-                       'index=proxy src_host=$HOST | bin _time span=1m | stats count by dest_domain _time '
-                       '| eventstats avg(count) as a stdev(count) as s by dest_domain '
-                       '| where s < 1 AND a > 5',
-                       "Low-variance periodic requests to a domain (beacon)"),
+                    _q(
+                        "spl",
+                        "index=proxy src_host=$HOST | bin _time span=1m | stats count by dest_domain _time "
+                        "| eventstats avg(count) as a stdev(count) as s by dest_domain "
+                        "| where s < 1 AND a > 5",
+                        "Low-variance periodic requests to a domain (beacon)",
+                    ),
                 ],
                 expected_findings="Regular, uniform requests to a rare external domain.",
                 false_positive_notes="Telemetry/agent check-ins, software update pollers, NTP.",
@@ -182,14 +208,17 @@ def _templates() -> dict[str, list[HuntHypothesis]]:
             HuntHypothesis(
                 title="Large or anomalous outbound transfer from a sensitive asset",
                 rationale="Exfil shows up as an egress volume spike far above the host's baseline.",
-                mitre_technique_id="T1041", mitre_technique_name="Exfiltration Over C2 Channel",
+                mitre_technique_id="T1041",
+                mitre_technique_name="Exfiltration Over C2 Channel",
                 tactic="Exfiltration",
                 data_sources=["netflow", "proxy logs", "DLP"],
                 queries=[
-                    _q("spl",
-                       'index=netflow src_host=$HOST | stats sum(bytes_out) as out by dest_ip '
-                       '| where out > 500000000',
-                       "Egress > ~500MB to a single destination"),
+                    _q(
+                        "spl",
+                        "index=netflow src_host=$HOST | stats sum(bytes_out) as out by dest_ip "
+                        "| where out > 500000000",
+                        "Egress > ~500MB to a single destination",
+                    ),
                 ],
                 expected_findings="Outbound bytes far exceeding the host's normal egress baseline.",
                 false_positive_notes="Backups, log shipping, legitimate large uploads.",
@@ -200,18 +229,22 @@ def _templates() -> dict[str, list[HuntHypothesis]]:
             HuntHypothesis(
                 title="Mass file rename/encryption and shadow-copy deletion on affected hosts",
                 rationale="Ransomware canonically deletes VSS and rewrites files with a new extension at high rate.",
-                mitre_technique_id="T1486", mitre_technique_name="Data Encrypted for Impact",
+                mitre_technique_id="T1486",
+                mitre_technique_name="Data Encrypted for Impact",
                 tactic="Impact",
                 data_sources=["EDR file events", "Windows Sysmon EventID 11", "process events"],
                 queries=[
-                    _q("eql",
-                       'process where process.name in ("vssadmin.exe","wbadmin.exe") and '
-                       'process.command_line : ("*delete*","*shadows*")',
-                       "Shadow-copy deletion (inhibit recovery)"),
-                    _q("spl",
-                       'index=edr action=file_rename | stats count by host '
-                       '| where count > 500',
-                       "High-rate file rename bursts per host"),
+                    _q(
+                        "eql",
+                        'process where process.name in ("vssadmin.exe","wbadmin.exe") and '
+                        'process.command_line : ("*delete*","*shadows*")',
+                        "Shadow-copy deletion (inhibit recovery)",
+                    ),
+                    _q(
+                        "spl",
+                        "index=edr action=file_rename | stats count by host | where count > 500",
+                        "High-rate file rename bursts per host",
+                    ),
                 ],
                 expected_findings="Shadow-copy deletion and/or a burst of file renames to a new extension.",
                 false_positive_notes="Bulk migrations, backup software, disk-encryption rollouts.",
@@ -222,16 +255,21 @@ def _templates() -> dict[str, list[HuntHypothesis]]:
             HuntHypothesis(
                 title="Other recipients of the same phishing campaign clicked or replied",
                 rationale="Phishing lands in many inboxes; the reported one is rarely the only click.",
-                mitre_technique_id="T1566", mitre_technique_name="Phishing",
+                mitre_technique_id="T1566",
+                mitre_technique_name="Phishing",
                 tactic="Initial Access",
                 data_sources=["email gateway logs", "proxy logs"],
                 queries=[
-                    _q("spl",
-                       'index=email sender=$SENDER OR subject="$SUBJECT" | stats values(recipient) by url',
-                       "All recipients of the same sender/subject/URL"),
-                    _q("spl",
-                       'index=proxy url=$PHISH_URL | stats count by src_user',
-                       "Users who fetched the phishing URL"),
+                    _q(
+                        "spl",
+                        'index=email sender=$SENDER OR subject="$SUBJECT" | stats values(recipient) by url',
+                        "All recipients of the same sender/subject/URL",
+                    ),
+                    _q(
+                        "spl",
+                        "index=proxy url=$PHISH_URL | stats count by src_user",
+                        "Users who fetched the phishing URL",
+                    ),
                 ],
                 expected_findings="Additional recipients who received or clicked the same lure.",
                 false_positive_notes="Security-team detonation, mailbox rules, sandbox fetches.",
@@ -247,9 +285,12 @@ _DEFAULT_HYPOTHESIS = HuntHypothesis(
     tactic="Discovery",
     data_sources=["SIEM (all sources)", "EDR", "proxy/netflow"],
     queries=[
-        _q("spl", 'index=* (src_ip=$SRC_IP OR user=$USER OR host=$HOST) earliest=-7d '
-                  '| stats count by index sourcetype',
-           "Any telemetry mentioning the incident's key entities in the last 7 days"),
+        _q(
+            "spl",
+            "index=* (src_ip=$SRC_IP OR user=$USER OR host=$HOST) earliest=-7d "
+            "| stats count by index sourcetype",
+            "Any telemetry mentioning the incident's key entities in the last 7 days",
+        ),
     ],
     expected_findings="Additional events tied to the incident's IPs/users/hosts beyond the original alert.",
     false_positive_notes="Normal activity by the same user/host; scope to anomalous behavior.",

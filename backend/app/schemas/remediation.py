@@ -13,9 +13,9 @@ class RemediationRisk(str, Enum):
 
 
 class ContainmentActionType(str, Enum):
-    """"Action vocabulary for the SOC containment plan."""
+    """ "Action vocabulary for the SOC containment plan."""
 
-    NOTIFICATION = "notification"             # alert humans — auto-approve
+    NOTIFICATION = "notification"  # alert humans — auto-approve
     QUARANTINE_FILE = "quarantine_file"
     ROTATE_CREDENTIALS = "rotate_credentials"
     BLOCK_IP = "block_ip"
@@ -25,7 +25,7 @@ class ContainmentActionType(str, Enum):
     SHELL_COMMAND = "shell_command"
     API_CALL = "api_call"
     CONFIGURATION_CHANGE = "configuration_change"
-    HUMAN_ACTION = "human_action"             # out-of-band action for the analyst
+    HUMAN_ACTION = "human_action"  # out-of-band action for the analyst
 
 
 # Action types that must always require a human to approve, regardless of severity.
@@ -66,7 +66,7 @@ class RemediationStep(BaseModel):
     )
     validation_check: str | None = Field(
         default=None,
-        description="How to verify this step succeeded (e.g. 'ip no longer appears in auth logs')"
+        description="How to verify this step succeeded (e.g. 'ip no longer appears in auth logs')",
     )
     requires_human_approval: bool = False
 
@@ -80,9 +80,7 @@ class RemediationPlan(BaseModel):
     """
 
     incident_id: str
-    root_cause_summary: str = Field(
-        description="One-line summary of the security root cause"
-    )
+    root_cause_summary: str = Field(description="One-line summary of the security root cause")
     confidence_score: float = Field(ge=0.0, le=1.0)
     estimated_total_duration_minutes: int = 5
     steps: list[RemediationStep]

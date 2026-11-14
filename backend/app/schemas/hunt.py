@@ -6,6 +6,7 @@ succeed?" Each hypothesis is falsifiable and ships with concrete, runnable
 queries so an analyst can execute the hunt immediately instead of translating a
 vague idea into SIEM syntax.
 """
+
 from __future__ import annotations
 
 from enum import Enum
@@ -33,7 +34,9 @@ class HuntQuery(BaseModel):
 class HuntHypothesis(BaseModel):
     """One falsifiable hunt idea derived from a technique or incident."""
 
-    title: str = Field(description="Short imperative hypothesis, e.g. 'Brute force succeeded and lateral movement began'")
+    title: str = Field(
+        description="Short imperative hypothesis, e.g. 'Brute force succeeded and lateral movement began'"
+    )
     rationale: str = Field(default="", description="Why this is worth hunting given the finding")
     mitre_technique_id: str = Field(default="", description="Primary ATT&CK technique, e.g. T1110")
     mitre_technique_name: str = Field(default="")

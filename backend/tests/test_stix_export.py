@@ -55,27 +55,42 @@ def test_report_refs_cover_all_objects():
     assert report["type"] == "report"
     obj_ids = {o["id"] for o in bundle["objects"]}
     ref_ids = set(report["object_refs"])
-    assert ref_ids == obj_ids - {report["id"]}, "report.object_refs should cover all non-report objects"
+    assert ref_ids == obj_ids - {report["id"]}, (
+        "report.object_refs should cover all non-report objects"
+    )
 
 
 def test_ip_ioc_produces_ipv4_pattern():
-    ind = ioc_to_indicator({"type": "ip", "value": "198.51.100.1", "verdict": "MALICIOUS"}, "2026-01-01T00:00:00Z")
+    ind = ioc_to_indicator(
+        {"type": "ip", "value": "198.51.100.1", "verdict": "MALICIOUS"}, "2026-01-01T00:00:00Z"
+    )
     assert ind["pattern"] == "[ipv4-addr:value = '198.51.100.1']"
 
 
 def test_single_quote_is_escaped():
-    ind = ioc_to_indicator({"type": "ip", "value": "198.51.100.1' or 1=1--", "verdict": "MALICIOUS"}, "2026-01-01T00:00:00Z")
+    ind = ioc_to_indicator(
+        {"type": "ip", "value": "198.51.100.1' or 1=1--", "verdict": "MALICIOUS"},
+        "2026-01-01T00:00:00Z",
+    )
     assert "\\'" in ind["pattern"]
 
 
 def test_empty_iocs_no_crash():
-    bundle = build_stix_bundle({"alert_message": "x", "triage_result": {}, "investigation_finding": {}})
+    bundle = build_stix_bundle(
+        {"alert_message": "x", "triage_result": {}, "investigation_finding": {}}
+    )
     assert bundle["type"] == "bundle"
     assert len(bundle["objects"]) >= 1  # at least the report
 
 
 def test_empty_techniques_no_crash():
-    bundle = build_stix_bundle({"alert_message": "x", "triage_result": {"attack_techniques": []}, "investigation_finding": {"iocs": []}})
+    bundle = build_stix_bundle(
+        {
+            "alert_message": "x",
+            "triage_result": {"attack_techniques": []},
+            "investigation_finding": {"iocs": []},
+        }
+    )
     report = bundle["objects"][0]
     assert report["object_refs"] == []
 
@@ -98,7 +113,9 @@ def test_navigator_layer_empty():
 
 
 def test_technique_to_attack_pattern():
-    ap = technique_to_attack_pattern({"technique_id": "T1110", "name": "Brute Force"}, "2026-01-01T00:00:00Z")
+    ap = technique_to_attack_pattern(
+        {"technique_id": "T1110", "name": "Brute Force"}, "2026-01-01T00:00:00Z"
+    )
     assert ap["type"] == "attack-pattern"
     assert ap["external_references"][0]["external_id"] == "T1110"
     assert "attack.mitre.org" in ap["external_references"][0]["url"]

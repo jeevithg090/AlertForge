@@ -4,10 +4,12 @@ Revision ID: 0001
 Revises:
 Create Date: 2025-07-02
 """
+
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "0001"
 down_revision = None
@@ -20,11 +22,27 @@ def upgrade() -> None:
 
     op.create_table(
         "incidents",
-        sa.Column("id", sa.dialects.postgresql.UUID(as_uuid=True), primary_key=True,
-                  server_default=sa.text("gen_random_uuid()")),
-        sa.Column("signal_id", sa.dialects.postgresql.UUID(as_uuid=True), nullable=False, unique=True),
-        sa.Column("created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("NOW()")),
-        sa.Column("updated_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("NOW()")),
+        sa.Column(
+            "id",
+            sa.dialects.postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
+        sa.Column(
+            "signal_id", sa.dialects.postgresql.UUID(as_uuid=True), nullable=False, unique=True
+        ),
+        sa.Column(
+            "created_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("NOW()"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("NOW()"),
+        ),
         sa.Column("resolved_at", sa.TIMESTAMP(timezone=True)),
         sa.Column("severity", sa.String(20), nullable=False),
         sa.Column("category", sa.String(30), nullable=False),
@@ -50,10 +68,18 @@ def upgrade() -> None:
 
     op.create_table(
         "remediation_steps",
-        sa.Column("id", sa.dialects.postgresql.UUID(as_uuid=True), primary_key=True,
-                  server_default=sa.text("gen_random_uuid()")),
-        sa.Column("incident_id", sa.dialects.postgresql.UUID(as_uuid=True),
-                  sa.ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "id",
+            sa.dialects.postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
+        sa.Column(
+            "incident_id",
+            sa.dialects.postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("incidents.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("step_number", sa.Integer, nullable=False),
         sa.Column("action_type", sa.String(50), nullable=False),
         sa.Column("description", sa.Text, nullable=False),
@@ -77,11 +103,23 @@ def upgrade() -> None:
 
     op.create_table(
         "audit_log",
-        sa.Column("id", sa.dialects.postgresql.UUID(as_uuid=True), primary_key=True,
-                  server_default=sa.text("gen_random_uuid()")),
-        sa.Column("incident_id", sa.dialects.postgresql.UUID(as_uuid=True),
-                  sa.ForeignKey("incidents.id", ondelete="SET NULL")),
-        sa.Column("timestamp", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("NOW()")),
+        sa.Column(
+            "id",
+            sa.dialects.postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
+        sa.Column(
+            "incident_id",
+            sa.dialects.postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("incidents.id", ondelete="SET NULL"),
+        ),
+        sa.Column(
+            "timestamp",
+            sa.TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=sa.text("NOW()"),
+        ),
         sa.Column("actor", sa.String(100), nullable=False),
         sa.Column("action", sa.String(100), nullable=False),
         sa.Column("details", sa.dialects.postgresql.JSONB),
@@ -94,8 +132,12 @@ def upgrade() -> None:
 
     op.create_table(
         "alert_sources",
-        sa.Column("id", sa.dialects.postgresql.UUID(as_uuid=True), primary_key=True,
-                  server_default=sa.text("gen_random_uuid()")),
+        sa.Column(
+            "id",
+            sa.dialects.postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
         sa.Column("name", sa.String(100), nullable=False),
         sa.Column("source_type", sa.String(30), nullable=False),
         sa.Column("is_active", sa.Boolean, server_default=sa.text("TRUE")),
@@ -105,8 +147,12 @@ def upgrade() -> None:
 
     op.create_table(
         "runbooks",
-        sa.Column("id", sa.dialects.postgresql.UUID(as_uuid=True), primary_key=True,
-                  server_default=sa.text("gen_random_uuid()")),
+        sa.Column(
+            "id",
+            sa.dialects.postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
         sa.Column("title", sa.String(500), nullable=False),
         sa.Column("category", sa.String(100)),
         sa.Column("tags", sa.dialects.postgresql.ARRAY(sa.Text)),

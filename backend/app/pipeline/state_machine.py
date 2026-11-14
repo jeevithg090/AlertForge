@@ -3,25 +3,43 @@
 Pure functions over status strings — no hidden state. The orchestrator drives
 transitions; invalid transitions raise so a bug surfaces immediately.
 """
+
 from __future__ import annotations
 
 from app.schemas.incident import IncidentStatus
 
 # legal transitions: from -> {to, ...}
 _TRANSITIONS: dict[str, set[str]] = {
-    IncidentStatus.INGESTED.value: {IncidentStatus.TRIAGING.value, IncidentStatus.DISMISSED.value, IncidentStatus.ESCALATED.value},
+    IncidentStatus.INGESTED.value: {
+        IncidentStatus.TRIAGING.value,
+        IncidentStatus.DISMISSED.value,
+        IncidentStatus.ESCALATED.value,
+    },
     IncidentStatus.TRIAGING.value: {
         IncidentStatus.INVESTIGATING.value,
         IncidentStatus.DISMISSED.value,
         IncidentStatus.ESCALATED.value,
     },
-    IncidentStatus.INVESTIGATING.value: {IncidentStatus.PLANNING.value, IncidentStatus.ESCALATED.value},
-    IncidentStatus.PLANNING.value: {IncidentStatus.AWAITING_APPROVAL.value, IncidentStatus.ESCALATED.value},
-    IncidentStatus.AWAITING_APPROVAL.value: {IncidentStatus.EXECUTING.value, IncidentStatus.DISMISSED.value, IncidentStatus.ESCALATED.value},
+    IncidentStatus.INVESTIGATING.value: {
+        IncidentStatus.PLANNING.value,
+        IncidentStatus.ESCALATED.value,
+    },
+    IncidentStatus.PLANNING.value: {
+        IncidentStatus.AWAITING_APPROVAL.value,
+        IncidentStatus.ESCALATED.value,
+    },
+    IncidentStatus.AWAITING_APPROVAL.value: {
+        IncidentStatus.EXECUTING.value,
+        IncidentStatus.DISMISSED.value,
+        IncidentStatus.ESCALATED.value,
+    },
     IncidentStatus.EXECUTING.value: {IncidentStatus.RESOLVED.value, IncidentStatus.ESCALATED.value},
     IncidentStatus.DISMISSED.value: set(),
     IncidentStatus.RESOLVED.value: set(),
-    IncidentStatus.ESCALATED.value: {IncidentStatus.AWAITING_APPROVAL.value, IncidentStatus.EXECUTING.value},
+    IncidentStatus.ESCALATED.value: {
+        IncidentStatus.AWAITING_APPROVAL.value,
+        IncidentStatus.EXECUTING.value,
+    },
 }
 
 

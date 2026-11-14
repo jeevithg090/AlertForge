@@ -4,6 +4,7 @@ Streams the Post-Incident Report (mime: Security Incident Report) to the
 dashboard via SSE, then creates a JIRA ticket through the self-hosted MCP
 server so the security incident is officially tracked.
 """
+
 from __future__ import annotations
 
 import json
@@ -74,22 +75,28 @@ class PIRAgent(AgentPersona):
 
         await self.say(incident_id, "Generating security incident report...")
 
-        context = json.dumps({
-            "incident_id": incident_id,
-            "severity": severity,
-            "category": incident.get("category", "UNKNOWN"),
-            "affected_service": incident.get("affected_service", "unknown"),
-            "alert_message": incident.get("alert_message", ""),
-            "created_at": incident.get("created_at", ""),
-            "resolved_at": incident.get("resolved_at", ""),
-            "triage_result": incident.get("triage_result", {}),
-            "investigation_finding": incident.get("investigation_finding", {}),
-            "remediation_plan": incident.get("remediation_plan", {}),
-        }, default=str)
+        context = json.dumps(
+            {
+                "incident_id": incident_id,
+                "severity": severity,
+                "category": incident.get("category", "UNKNOWN"),
+                "affected_service": incident.get("affected_service", "unknown"),
+                "alert_message": incident.get("alert_message", ""),
+                "created_at": incident.get("created_at", ""),
+                "resolved_at": incident.get("resolved_at", ""),
+                "triage_result": incident.get("triage_result", {}),
+                "investigation_finding": incident.get("investigation_finding", {}),
+                "remediation_plan": incident.get("remediation_plan", {}),
+            },
+            default=str,
+        )
 
         messages = [
             {"role": "system", "content": PIR_SYSTEM},
-            {"role": "user", "content": f"Generate a security incident report for this finding:\n{context}"},
+            {
+                "role": "user",
+                "content": f"Generate a security incident report for this finding:\n{context}",
+            },
         ]
 
         # Stream the PIR to the dashboard
@@ -124,9 +131,7 @@ class PIRAgent(AgentPersona):
             "P3_MEDIUM": "Medium",
             "P4_LOW": "Low",
         }.get(severity, "Medium")
-        summary = (
-            f"[{severity}] {incident.get('alert_message', 'Security incident')[:120]}"
-        )
+        summary = f"[{severity}] {incident.get('alert_message', 'Security incident')[:120]}"
         description = (
             f"Submitted by SentinelForge PIR Agent.\n\n"
             f"Verdict: {triage.get('verdict', 'UNKNOWN')}\n"

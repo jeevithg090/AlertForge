@@ -4,6 +4,7 @@ These are deliberately mock-safe: in production they would call the real
 firewall API / IdP / EDR isolation endpoint, but they always return a credible
 result so the demo can complete end to end.
 """
+
 from __future__ import annotations
 
 import asyncio
