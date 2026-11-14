@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ApiError, type ApiRecord, fetchSecurityControls, fetchSecurityEvents } from '@/lib/api';
+import { type ApiRecord, fetchSecurityControls, fetchSecurityEvents } from '@/lib/api';
+import ErrorNotice from '@/components/ErrorNotice';
 
 interface SecurityEvent {
   id: string;
@@ -23,11 +24,10 @@ export default function SecurityPage() {
   const [controls, setControls] = useState<Control[]>([]);
 
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
-    const onError = (err: unknown) =>
-      setError(err instanceof ApiError ? err.message : 'Could not load security data');
+    const onError = (err: unknown) => setError(err);
     Promise.all([
       fetchSecurityEvents(50).then(d => setEvents((d.events || []) as SecurityEvent[])).catch(onError),
       fetchSecurityControls().then(d => setControls((d.controls || []) as Control[])).catch(onError),
@@ -49,11 +49,7 @@ export default function SecurityPage() {
 
       <main className="p-4 sm:p-6 max-w-4xl mx-auto space-y-6">
         {loading && <div className="text-gray-500 text-sm" role="status">Loading security controls…</div>}
-        {error && (
-          <div role="alert" className="bg-red-500/10 border border-red-500/40 text-red-300 rounded-lg p-4 text-sm">
-            {error}
-          </div>
-        )}
+        <ErrorNotice error={error} />
         {Object.entries(grouped).map(([category, items]) => (
           <section key={category} className="bg-warroom-surface border border-warroom-border rounded-lg p-6">
             <h2 className="text-lg font-semibold mb-4 text-warroom-success">{category}</h2>

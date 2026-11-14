@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
-  ApiError,
   type ApiRecord,
   fetchAnalytics,
   fetchByService,
@@ -12,6 +11,7 @@ import {
   fetchSummary,
   fetchTopTechniques,
 } from '@/lib/api';
+import ErrorNotice from '@/components/ErrorNotice';
 
 interface VerdictRow { verdict: string; count: number }
 interface ServiceRow { affected_service: string; count: number }
@@ -34,7 +34,7 @@ export default function AnalyticsPage() {
   const [usage, setUsage] = useState<UsageRow[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [error, setError] = useState('');
+  const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
     // Each panel degrades independently; only a total failure is surfaced.
@@ -53,10 +53,7 @@ export default function AnalyticsPage() {
       soft(fetchAnalytics().then(d => d.usage || []), []),
     ]).then(([s, m, ser, v, t, u]) => {
       setSummary(s); setMTTR(m); setByService(ser); setVerdicts(v); setTechniques(t); setUsage(u);
-      if (failures.length === 6) {
-        const first = failures[0];
-        setError(first instanceof ApiError ? first.message : 'Could not load analytics');
-      }
+      if (failures.length === 6) setError(failures[0]);
       setLoading(false);
     });
   }, []);
@@ -73,9 +70,7 @@ export default function AnalyticsPage() {
         {loading ? (
           <div className="text-gray-500" role="status">Loading analytics…</div>
         ) : error ? (
-          <div role="alert" className="bg-red-500/10 border border-red-500/40 text-red-300 rounded-lg p-4 text-sm">
-            {error}. Is the backend running?
-          </div>
+          <ErrorNotice error={error} />
         ) : (
           <>
             {/* Alert-fatigue reduction — the headline SOC efficiency metric. */}
