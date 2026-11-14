@@ -45,7 +45,8 @@ python demo/seed_alerts.py --scenario brute_force
 
 In the dashboard click the new incident card. You will see, in real time:
 
-- **CMDR** streams its reasoning trace (expand the *Reasoning Trace* panel)
+- **CMDR** streams its reasoning trace (the *Live reasoning trace* panel, shown when an
+  LLM key is set)
   then emits a verdict: `TRUE_POSITIVE`, severity `P2_HIGH`, blast radius
   `SERVICE`, and a chip row of MITRE ATT&CK techniques (T1110 Brute Force).
 - **ANLST** announces it is pulling evidence. It's handed only the ~5 tools
@@ -56,8 +57,8 @@ In the dashboard click the new incident card. You will see, in real time:
   - `query_edr_endpoint` (bastion-01) → running processes
   - `search_runbook` → "Failed Login Spike / Brute Force" playbook
   - `query_siem_auth_logs` → 40 masked failed-login events
-- **STRAT** returns a containment plan summary and the dashboard rolls out:
-  **⚠️ APPROVAL REQUIRED** cards appear for `block_ip` and `suspend_account`.
+- **STRAT** returns a containment plan summary and **Approval required** cards for
+  `block_ip` and `suspend_account` appear under *Containment plan* at the top of the page.
 
 > "SentinelForge will not block a production IP or suspend a user on its own.
 > It presents the plan, the evidence, the risk, and the rollback, and waits
@@ -65,12 +66,12 @@ In the dashboard click the new incident card. You will see, in real time:
 
 ### 3. Approve containment (~30s)
 
-Click **✓ APPROVE** on the `block_ip` card. The OPS agent executes the
+Click **Approve** on the `block_ip` card. The OPS agent executes the
 `block_ip` tool, runs the validation check, and streams `step.complete`.
 
 For a `P1_CRITICAL` incident (try `--scenario ransomware`) the guardrails apply
-the two-person rule: after the first approval the card comes back asking for a
-second approver. Approve it again signed in as a *different* operator with the
+the two-person rule: after the first approval the card comes back labelled
+**Second approver needed**, naming the first approver. Approve it again signed in as a *different* operator with the
 `approver` role (the same operator is refused). In the default development
 stack everyone is the anonymous admin, so create two approvers and sign in at
 `/login` to see this.
@@ -87,7 +88,7 @@ then calls the SentinelForge MCP server and a JIRA ticket link appears
 
 ### 5. Hunt for what you missed (~20s)
 
-In the incident sidebar, click **Generate hunt** under *🎯 Threat Hunt*. From the
+In the incident sidebar, click **Generate** on the *Threat hunt* card. From the
 incident's ATT&CK techniques SentinelForge produces falsifiable hunt hypotheses
 with **runnable queries** (Splunk/EQL/Sigma) — e.g. "did the brute force *succeed*
 and lateral movement begin?" with the SPL to check.
@@ -96,7 +97,8 @@ and lateral movement begin?" with the SPL to check.
 > touched is. That's a hunt, generated in seconds and ready to run."
 
 Refresh the page mid-incident — approval cards + agent messages + PIR content
-all restore from REST endpoints (no lost state when the SSE stream drops).
+all restore (the stream replays the incident's event log on reconnect, and the REST
+endpoints cover the case where it can't connect).
 
 ## Bonus demos (same stack)
 
