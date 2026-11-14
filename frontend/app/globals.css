@@ -2,78 +2,254 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * SentinelForge design tokens.
+ * The war room is a dark-first interface (operators watch it for hours on
+ * wall screens), so there is a single dark theme. Every text token below
+ * meets WCAG AA (>= 4.5:1) on both --bg and --surface.
+ */
 :root {
-  --bg: #0A0E1A;
-  --surface: #111827;
-  --border: #1F2937;
-  --text: #E5E7EB;
-  --text-muted: #9CA3AF;
-  --alert: #FF4444;
-  --thinking: #6B48FF;
-  --tool: #00D4FF;
-  --success: #00FF88;
-  --warning: #FFB800;
+  color-scheme: dark;
+  --bg: 10 14 26; /* #0a0e1a */
+  --surface: 17 24 39; /* #111827 */
+  --surface-raised: 23 32 51; /* #172033 */
+  --border: 31 41 55; /* #1f2937 */
+  --border-strong: 51 65 85; /* #334155 */
+  --text: 229 231 235; /* #e5e7eb */
+  --text-muted: 163 172 185; /* #a3acb9 */
+  --text-subtle: 143 153 168; /* #8f99a8 */
+  --focus: #00d4ff;
+  /* Surface/text tokens are RGB channels so Tailwind opacity modifiers work. */
+
+  --alert: #ff4444;
+  --thinking: #8b70ff;
+  --tool: #00d4ff;
+  --success: #00ff88;
+  --warning: #ffb800;
 }
 
-* {
-  box-sizing: border-box;
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-canvas text-fg font-sans antialiased;
+    margin: 0;
+    min-height: 100vh;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+
+  h1, h2, h3 {
+    @apply text-fg;
+    letter-spacing: -0.01em;
+  }
+
+  code, pre, kbd {
+    @apply font-mono;
+  }
+
+  /* One visible, consistent focus ring for every interactive element. */
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background: rgba(0, 212, 255, 0.3);
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgb(var(--border-strong));
+    border-radius: 4px;
+  }
 }
 
-body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
-  margin: 0;
-  padding: 0;
+@layer components {
+  /* ---------------------------------------------------------------- layout */
+  .container-page {
+    @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+  }
+
+  /* ----------------------------------------------------------------- cards */
+  .card {
+    @apply rounded-xl border border-line bg-surface shadow-card;
+  }
+  .card-body {
+    @apply p-4 sm:p-5;
+  }
+  .card-header {
+    @apply flex items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-5;
+  }
+  .card-title {
+    @apply text-sm font-semibold text-fg;
+  }
+  .eyebrow {
+    @apply text-2xs font-semibold uppercase tracking-wider text-fg-subtle;
+  }
+
+  /* --------------------------------------------------------------- buttons */
+  .btn {
+    @apply inline-flex min-h-[2.5rem] items-center justify-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold
+      transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-sm {
+    @apply min-h-[2.25rem] px-3 py-1.5 text-xs;
+  }
+  .btn-primary {
+    @apply border-transparent bg-warroom-tool text-canvas hover:bg-cyan-300;
+  }
+  .btn-secondary {
+    @apply border-line-strong bg-surface-raised text-fg hover:border-fg-subtle hover:bg-slate-800;
+  }
+  .btn-ghost {
+    @apply border-transparent bg-transparent text-fg-muted hover:bg-surface-raised hover:text-fg;
+  }
+  .btn-success {
+    @apply border-warroom-success/40 bg-warroom-success/10 text-warroom-success hover:bg-warroom-success/20;
+  }
+  .btn-danger {
+    @apply border-red-400/40 bg-red-500/10 text-red-300 hover:bg-red-500/20;
+  }
+  .btn-warning {
+    @apply border-warroom-warning/40 bg-warroom-warning/10 text-warroom-warning hover:bg-warroom-warning/20;
+  }
+  .btn-accent {
+    @apply border-warroom-tool/40 bg-warroom-tool/10 text-warroom-tool hover:bg-warroom-tool/20;
+  }
+
+  /* ---------------------------------------------------------------- inputs */
+  .label {
+    @apply mb-1.5 block text-xs font-medium text-fg-muted;
+  }
+  .input {
+    @apply block w-full rounded-lg border border-line-strong bg-canvas px-3 py-2 text-sm text-fg
+      placeholder:text-fg-subtle transition-colors focus:border-warroom-tool focus:outline-none
+      focus:ring-2 focus:ring-warroom-tool/30 focus-visible:outline-none disabled:opacity-60;
+    min-height: 2.5rem;
+  }
+  .input[aria-invalid='true'] {
+    @apply border-red-400 focus:ring-red-400/30;
+  }
+  .field-hint {
+    @apply mt-1.5 text-xs text-fg-subtle;
+  }
+  .field-error {
+    @apply mt-1.5 text-xs text-red-300;
+  }
+
+  /* ---------------------------------------------------------------- badges */
+  .badge {
+    @apply inline-flex items-center gap-1 whitespace-nowrap rounded-md border px-2 py-0.5 text-2xs font-semibold;
+  }
+
+  /* -------------------------------------------------------------- skeleton */
+  .skeleton {
+    @apply rounded-md;
+    background: linear-gradient(90deg, #172033 0px, #223049 120px, #172033 240px);
+    background-size: 800px 100%;
+    animation: shimmer 1.6s linear infinite;
+  }
+
+  /* -------------------------------------------------------------- nav link */
+  .nav-link {
+    @apply inline-flex min-h-[2.25rem] items-center rounded-lg px-3 text-sm font-medium text-fg-muted transition-colors hover:bg-surface-raised hover:text-fg;
+  }
+  .nav-link[aria-current='page'] {
+    @apply bg-surface-raised text-fg;
+  }
+
+  /* ----------------------------------------------------------- skip link */
+  .skip-link {
+    @apply absolute left-4 top-2 z-50 -translate-y-16 rounded-lg bg-warroom-tool px-4 py-2 text-sm font-semibold text-canvas transition-transform focus:translate-y-0;
+  }
 }
 
-::-webkit-scrollbar {
-  width: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: var(--bg);
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 3px;
-}
-
+/* ------------------------------------------------------- war-room specifics */
 .thinking-panel {
-  background: linear-gradient(135deg, rgba(107, 72, 255, 0.08), rgba(107, 72, 255, 0.02));
-  border: 1px solid rgba(107, 72, 255, 0.3);
-  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(139, 112, 255, 0.1), rgba(139, 112, 255, 0.02));
+  border: 1px solid rgba(139, 112, 255, 0.35);
+  border-radius: 12px;
 }
 
 .tool-entry {
   border-left: 3px solid var(--tool);
-  background: rgba(0, 212, 255, 0.04);
-  border-radius: 0 6px 6px 0;
+  background: rgba(0, 212, 255, 0.05);
+  border-radius: 0 8px 8px 0;
 }
 
 .approval-card {
-  background: linear-gradient(135deg, rgba(255, 184, 0, 0.08), rgba(255, 68, 68, 0.04));
-  border: 2px solid var(--warning);
+  background: linear-gradient(135deg, rgba(255, 184, 0, 0.08), rgba(255, 68, 68, 0.03));
+  border: 1px solid rgba(255, 184, 0, 0.6);
   border-radius: 12px;
-  animation: pulse-border 2s ease-in-out infinite;
-}
-
-@keyframes pulse-border {
-  0%, 100% { border-color: var(--warning); }
-  50% { border-color: var(--alert); }
+  box-shadow: 0 0 0 1px rgba(255, 184, 0, 0.12), 0 8px 24px -12px rgba(255, 184, 0, 0.35);
 }
 
 .agent-message {
-  animation: fade-in 0.3s ease-out;
+  animation: fade-in 0.25s ease-out;
 }
 
 .typing-cursor::after {
-  content: '|';
+  content: '▍';
+  margin-left: 2px;
+  color: var(--thinking);
   animation: blink 1s step-end infinite;
 }
 
 @keyframes blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
+}
+
+@keyframes fade-in {
+  0% { opacity: 0; transform: translateY(4px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+/* Rendered markdown (post-incident report). */
+.markdown {
+  @apply text-sm leading-relaxed text-fg;
+}
+.markdown h1, .markdown h2, .markdown h3 {
+  @apply mb-2 mt-4 font-semibold first:mt-0;
+}
+.markdown h1 { @apply text-lg; }
+.markdown h2 { @apply text-base; }
+.markdown h3 { @apply text-sm; }
+.markdown p { @apply my-2; }
+.markdown ul { @apply my-2 list-disc pl-5; }
+.markdown ol { @apply my-2 list-decimal pl-5; }
+.markdown li { @apply my-0.5; }
+.markdown code { @apply rounded bg-canvas px-1 py-0.5 text-xs; }
+.markdown pre { @apply my-2 overflow-x-auto rounded-lg bg-canvas p-3 text-xs; }
+.markdown a { @apply text-warroom-tool underline; }
+.markdown table { @apply my-2 w-full text-xs; }
+.markdown th, .markdown td { @apply border border-line px-2 py-1 text-left; }
+
+/* Respect users who ask for less motion. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

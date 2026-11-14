@@ -39,6 +39,36 @@ export function setToken(token: string | null): void {
   }
 }
 
+export interface Session {
+  email: string;
+  name: string;
+  role: string;
+  expiresAt: number | null;
+}
+
+/**
+ * Read display details from the stored JWT. This is for the UI only (showing
+ * who is signed in); the backend verifies the signature on every request.
+ */
+export function getSession(): Session | null {
+  const token = getToken();
+  if (!token) return null;
+  try {
+    const part = token.split('.')[1];
+    const json = atob(part.replace(/-/g, '+').replace(/_/g, '/'));
+    const claims = JSON.parse(json);
+    const expiresAt = typeof claims.exp === 'number' ? claims.exp * 1000 : null;
+    if (expiresAt && expiresAt < Date.now()) return null;
+    return { email: claims.sub ?? '', name: claims.name ?? '', role: claims.role ?? '', expiresAt };
+  } catch {
+    return null;
+  }
+}
+
+export function logout(): void {
+  setToken(null);
+}
+
 export function apiUrl(path: string): string {
   return `${API_BASE}${path}`;
 }
